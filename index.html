@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#0f172a">
   <title>Ігровий центр · Telegram Mini App</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <div id="app">
@@ -16,6 +16,10 @@
       </div>
       <div class="header-actions">
         <div class="header-balance" aria-label="Баланс монет">🪙 <span id="balance">0</span></div>
+        <div class="header-diamonds" aria-label="Баланс діамантів">
+          💎 <span id="header-diamonds">0</span>
+          <button class="diamonds-add-button" type="button" data-open-diamonds-shop aria-label="Купити діаманти">+</button>
+        </div>
         <button class="btn-menu">☰</button>
         <div class="avatar" id="header-avatar">A</div>
       </div>
@@ -341,9 +345,53 @@
             <p>ID: <span id="profile-user-id">—</span></p>
           </div>
         </section>
-        <div class="profile-balance-card"><span>Баланс монет</span><strong>🪙 <span id="profile-balance">0</span></strong></div>
+        <div class="profile-currency-grid">
+          <div class="profile-balance-card"><span>Баланс монет</span><strong>🪙 <span id="profile-balance">0</span></strong></div>
+          <div class="profile-balance-card profile-diamonds-card">
+            <span>Баланс діамантів</span>
+            <div class="profile-diamonds-balance">
+              <strong>💎 <span id="profile-diamonds">0</span></strong>
+              <button class="diamonds-add-button" type="button" data-open-diamonds-shop aria-label="Купити діаманти">+</button>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
+    <div class="diamonds-shop-overlay" id="diamonds-shop-modal" aria-hidden="true">
+      <section class="diamonds-shop-dialog" role="dialog" aria-modal="true" aria-labelledby="diamonds-shop-title">
+        <header class="diamonds-shop-header">
+          <div>
+            <p class="diamonds-shop-eyebrow">TELEGRAM STARS</p>
+            <h2 id="diamonds-shop-title">💎 Магазин діамантів</h2>
+          </div>
+          <button class="diamonds-shop-close" type="button" data-close-diamonds-shop aria-label="Закрити магазин">×</button>
+        </header>
+        <p class="diamonds-shop-description">Оберіть пакет і сплатіть його офіційними Telegram Stars.</p>
+        <div class="diamonds-shop-packages">
+          <button class="diamond-package" type="button" data-diamond-package="10">
+            <span class="diamond-package-amount">10 💎</span>
+            <span class="diamond-package-price">15 ⭐️</span>
+          </button>
+          <button class="diamond-package" type="button" data-diamond-package="50">
+            <span class="diamond-package-badge">Вигода 13%</span>
+            <span class="diamond-package-amount">50 💎</span>
+            <span class="diamond-package-price">65 ⭐️</span>
+          </button>
+          <button class="diamond-package" type="button" data-diamond-package="100">
+            <span class="diamond-package-badge">Вигода 23%</span>
+            <span class="diamond-package-amount">100 💎</span>
+            <span class="diamond-package-price">115 ⭐️</span>
+          </button>
+          <button class="diamond-package diamond-package-best" type="button" data-diamond-package="300">
+            <span class="diamond-package-badge">🔥 НАЙВИГІДНІШЕ • Економія 40%</span>
+            <span class="diamond-package-amount">300 💎</span>
+            <span class="diamond-package-price">270 ⭐️</span>
+            <span class="diamond-package-note">Лише 0.9 ⭐️ за 1 💎</span>
+          </button>
+        </div>
+        <p class="diamonds-shop-status" id="diamonds-shop-status" role="status" aria-live="polite"></p>
+      </section>
+    </div>
     <div class="modal-overlay" id="room-invite-modal" aria-hidden="true">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="room-invite-title">
         <div class="modal-title" id="room-invite-title">Запрошення до гри в Дурак</div>
@@ -358,19 +406,19 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=4"></script>
-    <script src="js/firestore-room-store.js?v=4"></script>
-    <script src="js/twa.js?v=4"></script>
-    <script src="js/game.js?v=4"></script>
-    <script src="js/router.js?v=4"></script>
-    <script src="js/cards.js?v=4"></script>
-    <script src="js/durak.js?v=4"></script>
-    <script src="js/battleship.js?v=4"></script>
-    <script src="js/tictactoe.js?v=4"></script>
-    <script src="js/store.js?v=4"></script>
-    <script src="js/durak-room.js?v=4"></script>
-    <script src="js/durak-multiplayer.js?v=4"></script>
-    <script src="js/main.js?v=4"></script>
+    <script src="js/firebase-config.js?v=6"></script>
+    <script src="js/firestore-room-store.js?v=6"></script>
+    <script src="js/twa.js?v=6"></script>
+    <script src="js/game.js?v=6"></script>
+    <script src="js/router.js?v=6"></script>
+    <script src="js/cards.js?v=6"></script>
+    <script src="js/durak.js?v=6"></script>
+    <script src="js/battleship.js?v=6"></script>
+    <script src="js/tictactoe.js?v=6"></script>
+    <script src="js/store.js?v=6"></script>
+    <script src="js/durak-room.js?v=6"></script>
+    <script src="js/durak-multiplayer.js?v=6"></script>
+    <script src="js/main.js?v=6"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (new URLSearchParams(window.location.search).has('battleshipRoom')) {

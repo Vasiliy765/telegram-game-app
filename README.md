@@ -36,10 +36,24 @@ Firestore `users` collection.
 2. Keep `serviceAccountKey.json` in the project root; it is ignored by Git.
 3. Install dependencies with `npm install`, then start the bot with `npm start`.
 4. In Telegram groups, enable bot access to regular messages (disable privacy
-   mode via BotFather) so the bot can see game invitations and the `Баланс`/`Топ`
-   commands. Web App buttons work in private chats; the group `/start` button
-   opens the same URL as a regular link button.
+   mode via BotFather) so the bot can see game invitations and text commands.
+   Web App buttons work in private chats; the group `/start` button opens the
+   same URL as a regular link button.
 
 The bot supports `/start`, `/balance` or `Баланс`, `/top` or `Топ`, and group
 invitations in the form `Зіграти в монетку <сума>` or
-`Зіграти в кубика <сума>` (10–300 coins).
+`Зіграти в кубика <сума>` (10–300 coins). User profiles in `users/{telegramId}`
+include coin and diamond balances. `Баланс`, `Топ`, `Зп`/`Зарплата`,
+`Магазин`/`Донат`, and the group game invitations work in chats. `Магазин` or
+`Донат` creates Telegram Stars invoice links for the four diamond packages;
+Mini App purchases use
+`https://telegram-game-app.onrender.com/api/create-diamonds-invoice`.
+The packages are 10/15, 50/65, 100/115, and 300/270 diamonds/Stars.
+
+The invoice endpoint accepts requests only with valid, recent Telegram Mini App
+`initData`, and its CORS origin is limited to the deployed Mini App. Successful
+Stars payments are checked against the invoice record and credited once in
+Firestore. Keep the Render bot service online with `BOT_TOKEN` and Firebase
+service credentials configured. The admin can grant diamonds with
+`Видати діаманти <Telegram ID> <кількість>` or by replying to a user's message
+with `Видати діаманти <кількість>`.

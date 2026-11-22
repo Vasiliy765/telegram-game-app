@@ -22,9 +22,18 @@ admin.initializeApp({
 const db = admin.firestore();
 const users = db.collection('users');
 const challenges = db.collection('challenges');
+const diamondPurchases = db.collection('diamondPurchases');
 const bot = new Bot(process.env.BOT_TOKEN);
 const WEBAPP_URL = 'https://vasiliy765.github.io/telegram-game-app/';
+const WEBAPP_ORIGIN = new URL(WEBAPP_URL).origin;
 const SALARY_COOLDOWN_MS = 3 * 60 * 60 * 1000;
+const DIAMOND_PACKAGES = Object.freeze({
+  '10': { diamonds: 10, stars: 15 },
+  '50': { diamonds: 50, stars: 65 },
+  '100': { diamonds: 100, stars: 115 },
+  '300': { diamonds: 300, stars: 270 },
+});
+const DIAMONDS_ADMIN_ID = '7784142934';
 
 function sendMessage(chatId, text, options = {}) {
   return bot.api.sendMessage({ chat_id: chatId, text, ...options });
@@ -82,7 +91,10 @@ async function ensureUser(user) {
         name: displayName(user),
         username: user.username || '',
         balance: 100,
+        diamonds: 0,
       });
+    } else if (snapshot.get('diamonds') == null) {
+      transaction.update(userRef, { diamonds: 0 });
     }
   });
 
@@ -136,6 +148,7 @@ async function sendSalary(chatId, user) {
       const balance = snapshot.get('balance');
       transaction.update(userRef, {
         balance: admin.firestore.FieldValue.increment(reward),
+        diamonds: snapshot.get('diamonds') == null ? 0 : snapshot.get('diamonds'),
         lastSalaryAt: now,
         name: displayName(user),
         username: user.username || '',
@@ -151,6 +164,7 @@ async function sendSalary(chatId, user) {
       name: displayName(user),
       username: user.username || '',
       balance: 100 + reward,
+      diamonds: 0,
       lastSalaryAt: now,
     });
     return { kind: 'paid', balance: 100 + reward };
@@ -177,6 +191,284 @@ async function sendSalary(chatId, user) {
       + `Загальний баланс: <b>${formatCoins(result.balance)} 🪙</b>`,
     { parse_mode: 'HTML' },
   );
+}
+
+function httpError(statusCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function validateTelegramInitData(initData) {
+  if (typeof initData !== 'string' || !initData) {
+    throw httpError(401, 'Telegram authentication is required.');
+  }
+
+  const params = new URLSearchParams(initData);
+  const receivedHash = params.get('hash');
+  if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash)) {
+    throw httpError(401, 'Invalid Telegram authentication data.');
+  }
+
+  const entries = [...params.entries()];
+  if (new Set(entries.map(([key]) => key)).size !== entries.length) {
+    throw httpError(401, 'Invalid Telegram authentication data.');
+  }
+  params.delete('hash');
+  const dataCheckString = [...params.entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
+  const secretKey = crypto.createHmac('sha256', process.env.BOT_TOKEN)
+    .update('WebAppData')
+    .digest();
+  const expectedHash = crypto.createHmac('sha256', secretKey)
+    .update(dataCheckString)
+    .digest();
+  const suppliedHash = Buffer.from(receivedHash, 'hex');
+  if (suppliedHash.length !== expectedHash.length
+      || !crypto.timingSafeEqual(suppliedHash, expectedHash)) {
+    throw httpError(401, 'Invalid Telegram authentication data.');
+  }
+
+  const authDate = Number(params.get('auth_date'));
+  const ageSeconds = Math.floor(Date.now() / 1000) - authDate;
+  if (!Number.isSafeInteger(authDate) || ageSeconds > 86_400 || ageSeconds < -60) {
+    throw httpError(401, 'Telegram authentication data has expired.');
+  }
+
+  let user;
+  try {
+    user = JSON.parse(params.get('user') || '');
+  } catch {
+    throw httpError(401, 'Invalid Telegram user data.');
+  }
+  if (!Number.isSafeInteger(user?.id) || user.id <= 0) {
+    throw httpError(401, 'Invalid Telegram user data.');
+  }
+  return user;
+}
+
+async function createDiamondsInvoiceLink(userId, packageId) {
+  const packageDetails = DIAMOND_PACKAGES[packageId];
+  if (!packageDetails) throw new Error(`Unknown diamond package: ${packageId}`);
+
+  const payload = `diamonds:${crypto.randomUUID()}`;
+  const purchaseRef = diamondPurchases.doc(payload);
+  await purchaseRef.create({
+    userId,
+    packageId,
+    diamonds: packageDetails.diamonds,
+    stars: packageDetails.stars,
+    status: 'pending',
+    createdAt: Date.now(),
+  });
+
+  try {
+    return await bot.api.createInvoiceLink({
+      title: `${packageDetails.diamonds} діамантів`,
+      description: `Пакет із ${packageDetails.diamonds} діамантів для гри`,
+      payload,
+      provider_token: '',
+      currency: 'XTR',
+      prices: [{ label: `${packageDetails.diamonds} 💎`, amount: packageDetails.stars }],
+    });
+  } catch (error) {
+    try {
+      await purchaseRef.update({ status: 'failed', failedAt: Date.now() });
+    } catch (updateError) {
+      console.error('Failed to mark a diamond invoice as failed:', updateError);
+    }
+    throw error;
+  }
+}
+
+async function sendDiamondsShop(chatId, user) {
+  const packages = await Promise.all(Object.entries(DIAMOND_PACKAGES).map(
+    async ([packageId, packageDetails]) => {
+      const deals = {
+        '50': ' · Вигода 13%',
+        '100': ' · Вигода 23%',
+        '300': ' · Економія 40%',
+      };
+      return {
+        text: `💎 ${packageDetails.diamonds} — ⭐️ ${packageDetails.stars}${deals[packageId] || ''}`,
+        url: await createDiamondsInvoiceLink(telegramId(user), packageId),
+      };
+    },
+  ));
+  await sendMessage(
+    chatId,
+    `<b>💎 Магазин діамантів</b>\nОберіть пакет для оплати Telegram Stars. `
+      + `Ці рахунки доступні лише ${escapeHtml(displayName(user))}:`,
+    {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: packages.map((button) => [button]) },
+    },
+  );
+}
+
+async function grantDiamonds(userId, amount, user = null) {
+  const userRef = users.doc(userId);
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(userRef);
+    if (snapshot.exists) {
+      transaction.update(userRef, {
+        diamonds: admin.firestore.FieldValue.increment(amount),
+      });
+      return;
+    }
+
+    transaction.set(userRef, {
+      id: Number(userId),
+      name: user ? displayName(user) : `Гравець ${userId}`,
+      username: user?.username || '',
+      balance: 100,
+      diamonds: admin.firestore.FieldValue.increment(amount),
+    });
+  });
+}
+
+async function validateDiamondPurchase(payload, userId, currency, totalAmount) {
+  if (typeof payload !== 'string' || !/^diamonds:[\da-f-]{36}$/i.test(payload)
+      || currency !== 'XTR') return false;
+  const purchaseSnapshot = await diamondPurchases.doc(payload).get();
+  if (!purchaseSnapshot.exists) return false;
+
+  const purchase = purchaseSnapshot.data();
+  const packageDetails = DIAMOND_PACKAGES[purchase.packageId];
+  return purchase.status === 'pending'
+    && purchase.userId === userId
+    && packageDetails
+    && purchase.diamonds === packageDetails.diamonds
+    && purchase.stars === packageDetails.stars
+    && totalAmount === packageDetails.stars;
+}
+
+async function processSuccessfulDiamondPayment(message) {
+  const payment = message.successful_payment;
+  const user = message.from;
+  const userId = telegramId(user);
+  const purchaseRef = diamondPurchases.doc(payment.invoice_payload);
+  const refund = async (reason) => {
+    if (payment.currency !== 'XTR' || !payment.telegram_payment_charge_id) {
+      console.error(`Cannot refund an invalid diamond payment: ${reason}`);
+      return;
+    }
+    try {
+      await bot.api.refundStarPayment({
+        user_id: user.id,
+        telegram_payment_charge_id: payment.telegram_payment_charge_id,
+      });
+      console.error(reason);
+    } catch (error) {
+      console.error(`Failed to refund a diamond payment: ${reason}`, error);
+    }
+  };
+
+  let result;
+  let packageDetails;
+  try {
+    const purchaseSnapshot = await purchaseRef.get();
+    if (!purchaseSnapshot.exists) {
+      await refund('Refunded a successful payment with an unknown invoice payload.');
+      return;
+    }
+
+    const purchase = purchaseSnapshot.data();
+    packageDetails = DIAMOND_PACKAGES[purchase.packageId];
+    if (!packageDetails
+        || purchase.userId !== userId
+        || payment.currency !== 'XTR'
+        || payment.total_amount !== packageDetails.stars) {
+      await refund('Refunded a successful payment that did not match its invoice.');
+      return;
+    }
+
+    const userRef = users.doc(userId);
+    result = await db.runTransaction(async (transaction) => {
+      const [currentPurchase, userSnapshot] = await Promise.all([
+        transaction.get(purchaseRef),
+        transaction.get(userRef),
+      ]);
+      if (!currentPurchase.exists) throw new Error('Diamond purchase record disappeared.');
+
+      const currentData = currentPurchase.data();
+      if (currentData.status === 'paid') {
+        return {
+          kind: currentData.telegramChargeId === payment.telegram_payment_charge_id
+            ? 'duplicate'
+            : 'already-paid',
+        };
+      }
+      if (currentData.status !== 'pending'
+          || currentData.userId !== userId
+          || currentData.packageId !== purchase.packageId
+          || currentData.stars !== packageDetails.stars
+          || currentData.diamonds !== packageDetails.diamonds
+          || payment.total_amount !== packageDetails.stars) {
+        throw new Error('Diamond purchase is not eligible for credit.');
+      }
+
+      if (userSnapshot.exists) {
+        transaction.update(userRef, {
+          diamonds: admin.firestore.FieldValue.increment(packageDetails.diamonds),
+        });
+      } else {
+        transaction.set(userRef, {
+          id: user.id,
+          name: displayName(user),
+          username: user.username || '',
+          balance: 100,
+          diamonds: admin.firestore.FieldValue.increment(packageDetails.diamonds),
+        });
+      }
+      transaction.update(purchaseRef, {
+        status: 'paid',
+        telegramChargeId: payment.telegram_payment_charge_id,
+        paidAt: Date.now(),
+      });
+
+      const savedDiamonds = userSnapshot.get('diamonds');
+      return {
+        kind: 'credited',
+        diamonds: (typeof savedDiamonds === 'number' && Number.isFinite(savedDiamonds)
+          ? savedDiamonds
+          : 0) + packageDetails.diamonds,
+      };
+    });
+
+    if (result.kind === 'duplicate') return;
+    if (result.kind === 'already-paid') {
+      await refund('Refunded a second payment for an already-used diamond invoice.');
+      return;
+    }
+  } catch (error) {
+    console.error('Failed to credit a successful diamond payment:', error);
+    try {
+      const purchaseSnapshot = await purchaseRef.get();
+      if (purchaseSnapshot.exists
+          && purchaseSnapshot.get('status') === 'paid'
+          && purchaseSnapshot.get('telegramChargeId') === payment.telegram_payment_charge_id) {
+        return;
+      }
+      await refund('Refunded a payment that could not be credited.');
+    } catch (recoveryError) {
+      console.error('Failed to determine the status of an uncredited payment:', recoveryError);
+    }
+    return;
+  }
+
+  try {
+    await sendMessage(
+      message.chat.id,
+      `✅ Оплату підтверджено! Нараховано <b>${packageDetails.diamonds} 💎</b>.\n`
+        + `Баланс діамантів: <b>${result.diamonds} 💎</b>`,
+      { parse_mode: 'HTML' },
+    );
+  } catch (error) {
+    console.error('Payment was credited but its confirmation message could not be sent:', error);
+  }
 }
 
 async function sendTop(chatId) {
@@ -507,9 +799,56 @@ async function playDice(challengeId, challenge, accepterName) {
 
 bot.on('message', async (context) => {
   const message = context.message;
-  if (!message.text) return;
 
   try {
+    if (message.successful_payment) {
+      await processSuccessfulDiamondPayment(message);
+      return;
+    }
+    if (!message.text) return;
+
+    const adminCommand = message.text.trim().match(/^видати діаманти(?:\s+(.+))?$/i);
+    if (adminCommand) {
+      if (telegramId(message.from) !== DIAMONDS_ADMIN_ID) {
+        await sendMessage(message.chat.id, 'Команда доступна лише адміністратору.');
+        return;
+      }
+
+      const argumentsList = adminCommand[1]?.trim().split(/\s+/) || [];
+      const repliedUser = message.reply_to_message?.from;
+      let targetId;
+      let amount;
+      if (repliedUser && argumentsList.length === 1) {
+        targetId = telegramId(repliedUser);
+        amount = Number(argumentsList[0]);
+      } else if (!repliedUser && argumentsList.length === 2) {
+        [targetId] = argumentsList;
+        amount = Number(argumentsList[1]);
+      } else {
+        await sendMessage(
+          message.chat.id,
+          'Формат: «Видати діаманти <ID> <кількість>» або відповіддю: «Видати діаманти <кількість>».',
+        );
+        return;
+      }
+
+      if (!/^\d{1,20}$/.test(targetId)
+          || !Number.isSafeInteger(Number(targetId))
+          || Number(targetId) <= 0
+          || !Number.isSafeInteger(amount)
+          || amount <= 0
+          || repliedUser?.is_bot) {
+        await sendMessage(message.chat.id, 'ID або кількість діамантів некоректні.');
+        return;
+      }
+
+      await grantDiamonds(targetId, amount, repliedUser);
+      await sendMessage(message.chat.id, `✅ Видано <b>${amount} 💎</b> гравцю <code>${targetId}</code>.`, {
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+
     const command = message.text.trim().match(/^\/(start|balance|top)(?:@\w+)?(?:\s|$)/i);
     if (command) {
       switch (command[1].toLowerCase()) {
@@ -537,6 +876,10 @@ bot.on('message', async (context) => {
       await sendSalary(message.chat.id, message.from);
       return;
     }
+    if (/^(магазин|донат)$/i.test(message.text.trim())) {
+      await sendDiamondsShop(message.chat.id, message.from);
+      return;
+    }
 
     if (!isGroup(message.chat)) return;
     const match = message.text.trim().match(/^зіграти в (монетку|кубика)\s+(\d+)$/i);
@@ -550,6 +893,31 @@ bot.on('message', async (context) => {
     await createChallenge(message, match[1].toLowerCase() === 'монетку' ? 'coin' : 'dice', stake);
   } catch (error) {
     console.error('Failed to handle message:', error);
+  }
+});
+
+bot.on('pre_checkout_query', async (context) => {
+  const query = context.update.pre_checkout_query;
+  let valid = false;
+  try {
+    valid = await validateDiamondPurchase(
+      query.invoice_payload,
+      telegramId(query.from),
+      query.currency,
+      query.total_amount,
+    );
+  } catch (error) {
+    console.error('Failed to validate a diamond pre-checkout query:', error);
+  }
+
+  try {
+    await bot.api.answerPreCheckoutQuery({
+      pre_checkout_query_id: query.id,
+      ok: valid,
+      ...(valid ? {} : { error_message: 'Не вдалося перевірити пакет. Спробуйте створити новий рахунок.' }),
+    });
+  } catch (error) {
+    console.error('Failed to answer a pre-checkout query:', error);
   }
 });
 
@@ -617,6 +985,29 @@ bot.catch((error) => {
   console.error('Telegram update failed:', error);
 });
 
+function sendJson(response, statusCode, data) {
+  response.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
+  response.end(JSON.stringify(data));
+}
+
+async function readJsonBody(request) {
+  const chunks = [];
+  let bodySize = 0;
+  for await (const chunk of request) {
+    bodySize += chunk.length;
+    if (bodySize > 16_384) {
+      throw httpError(413, 'Request body is too large.');
+    }
+    chunks.push(chunk);
+  }
+
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw httpError(400, 'Request body must be valid JSON.');
+  }
+}
+
 const server = http.createServer((request, response) => {
   if (request.method === 'GET' && request.url === '/') {
     response.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -624,8 +1015,75 @@ const server = http.createServer((request, response) => {
     return;
   }
 
-  response.writeHead(404);
-  response.end();
+  const requestUrl = new URL(request.url, 'http://localhost');
+  if (requestUrl.pathname !== '/api/create-diamonds-invoice') {
+    response.writeHead(404);
+    response.end();
+    return;
+  }
+
+  const origin = request.headers.origin;
+  if (origin === WEBAPP_ORIGIN) {
+    response.setHeader('Access-Control-Allow-Origin', WEBAPP_ORIGIN);
+    response.setHeader('Vary', 'Origin');
+  }
+
+  if (request.method === 'OPTIONS') {
+    if (origin !== WEBAPP_ORIGIN) {
+      sendJson(response, 403, { error: 'Origin is not allowed.' });
+      return;
+    }
+    response.writeHead(204, {
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Max-Age': '600',
+    });
+    response.end();
+    return;
+  }
+
+  if (request.method !== 'POST') {
+    response.setHeader('Allow', 'POST, OPTIONS');
+    sendJson(response, 405, { error: 'Method not allowed.' });
+    return;
+  }
+  if (origin && origin !== WEBAPP_ORIGIN) {
+    sendJson(response, 403, { error: 'Origin is not allowed.' });
+    return;
+  }
+  if (!request.headers['content-type']?.toLowerCase().startsWith('application/json')) {
+    sendJson(response, 415, { error: 'Content-Type must be application/json.' });
+    return;
+  }
+
+  void (async () => {
+    try {
+      const body = await readJsonBody(request);
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        throw httpError(400, 'Request body must be a JSON object.');
+      }
+      const userId = String(body.userId ?? '');
+      const packageId = String(body.packageId ?? '');
+      if (!/^\d{1,20}$/.test(userId) || !Number.isSafeInteger(Number(userId))) {
+        throw httpError(400, 'A valid Telegram userId is required.');
+      }
+      if (!Object.hasOwn(DIAMOND_PACKAGES, packageId)) {
+        throw httpError(400, 'Unknown diamond package.');
+      }
+      const telegramUser = validateTelegramInitData(body.initData);
+      if (String(telegramUser.id) !== userId) {
+        throw httpError(403, 'Telegram user does not match the invoice owner.');
+      }
+
+      const invoiceUrl = await createDiamondsInvoiceLink(userId, packageId);
+      sendJson(response, 200, { invoiceUrl });
+    } catch (error) {
+      console.error('Failed to create a diamonds invoice:', error);
+      sendJson(response, error.statusCode || 500, {
+        error: error.statusCode ? error.message : 'Unable to create the invoice.',
+      });
+    }
+  })();
 });
 
 server.listen(process.env.PORT || 3000);
@@ -634,7 +1092,10 @@ async function startBot() {
   await bot.api.deleteWebhook({ drop_pending_updates: true });
   await bot.init();
 
-  const polling = run(bot, { exitOnError: true });
+  const polling = run(bot, {
+    exitOnError: true,
+    allowedUpdates: ['message', 'callback_query', 'pre_checkout_query'],
+  });
   console.log('Бот успішно запущений!');
   await polling;
 }

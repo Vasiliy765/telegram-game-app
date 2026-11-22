@@ -1255,3 +1255,228 @@ body.tictactoe-active #view-tictactoe.active {
   .ttt-board { width: min(76vw, 45dvh, 360px); }
   .ttt-player-card { padding: 6px 4px; }
 }
+
+.header-diamonds {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px 0 9px;
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  border-radius: 999px;
+  background: #211d2b;
+  color: #d7c8ff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.diamonds-add-button {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #f43f5e;
+  color: #fff;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.profile-currency-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.profile-currency-grid .profile-balance-card {
+  min-width: 0;
+  margin: 0;
+  padding: 13px;
+  border-color: rgba(244, 63, 94, 0.3);
+  background: #211920;
+  color: #d5d5dc;
+  font-size: 12px;
+}
+
+.profile-currency-grid .profile-diamonds-card {
+  display: grid;
+  gap: 8px;
+  border-color: rgba(167, 139, 250, 0.35);
+  background: #211d2b;
+}
+
+.profile-diamonds-balance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.diamonds-shop-overlay {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(7px);
+}
+
+.diamonds-shop-overlay.open {
+  display: flex;
+}
+
+.diamonds-shop-dialog {
+  width: min(100%, 430px);
+  max-height: min(90dvh, 720px);
+  overflow-y: auto;
+  padding: 22px;
+  border: 1px solid #34343e;
+  border-radius: 22px;
+  background: #18181f;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+}
+
+.diamonds-shop-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.diamonds-shop-eyebrow {
+  margin: 0 0 6px;
+  color: #a78bfa;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.diamonds-shop-header h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 20px;
+}
+
+.diamonds-shop-close {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid #3a3a45;
+  border-radius: 50%;
+  background: #23232c;
+  color: #d7d7de;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.diamonds-shop-description {
+  margin: 12px 0 18px;
+  color: #a6a6b0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.diamonds-shop-packages {
+  display: grid;
+  gap: 10px;
+}
+
+.diamond-package {
+  position: relative;
+  display: grid;
+  min-height: 66px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 13px 15px;
+  border: 1px solid #34343e;
+  border-radius: 15px;
+  background: #202029;
+  color: #fff;
+  text-align: left;
+}
+
+.diamond-package-amount {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.diamond-package-price {
+  color: #f5d477;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.diamond-package-badge {
+  grid-column: 1 / -1;
+  color: #b6a4ff;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.diamond-package-best {
+  border: 2px solid #f43f5e;
+  background: linear-gradient(120deg, #2b1923, #211d2b);
+  box-shadow: 0 0 20px rgba(244, 63, 94, 0.13);
+}
+
+.diamond-package-best .diamond-package-badge {
+  color: #ff8296;
+}
+
+.diamond-package-note {
+  grid-column: 1 / -1;
+  color: #c4bdcf;
+  font-size: 11px;
+}
+
+.diamond-package:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.diamonds-shop-status {
+  min-height: 18px;
+  margin: 12px 0 0;
+  color: #c6c6d0;
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 380px) {
+  .header-actions {
+    gap: 5px;
+  }
+
+  .header-balance {
+    padding: 0 7px;
+    font-size: 12px;
+  }
+
+  .header-diamonds {
+    gap: 3px;
+    padding-right: 4px;
+    padding-left: 6px;
+    font-size: 12px;
+  }
+
+  .profile-currency-grid {
+    gap: 7px;
+  }
+
+  .profile-currency-grid .profile-balance-card {
+    padding: 11px 9px;
+  }
+
+  .diamonds-shop-dialog {
+    padding: 18px;
+  }
+}

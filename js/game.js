@@ -4,6 +4,7 @@
   telegramWebApp?.expand?.();
 
   const BALANCE_KEY = 'tga_balance';
+  const DIAMONDS_API_URL = 'https://telegram-game-app.onrender.com';
   const readBalance = () => {
     const value = Number.parseInt(localStorage.getItem(BALANCE_KEY) || '0', 10);
     return Number.isSafeInteger(value) && value >= 0 ? value : 0;
@@ -14,6 +15,7 @@
 
   window.APP_STATE = window.APP_STATE || {};
   window.APP_STATE.balance = readBalance();
+  window.APP_STATE.diamonds = 0;
 
   function getCurrentPlayerProfile() {
     const user = window.Telegram?.WebApp?.initDataUnsafe?.user;
@@ -222,9 +224,18 @@
       const savedBalance = snapshot.get('balance');
       if (!Number.isSafeInteger(savedBalance) || savedBalance < 0) {
         console.error(`Invalid balance in Firestore user document ${userId}.`);
-        return;
+      } else {
+        applyRemoteBalance(savedBalance, 'firestore');
       }
-      applyRemoteBalance(savedBalance, 'firestore');
+
+      const savedDiamonds = snapshot.get('diamonds');
+      if (savedDiamonds == null) {
+        applyRemoteDiamonds(0);
+      } else if (Number.isSafeInteger(savedDiamonds) && savedDiamonds >= 0) {
+        applyRemoteDiamonds(savedDiamonds);
+      } else {
+        console.error(`Invalid diamonds balance in Firestore user document ${userId}.`);
+      }
     }, (error) => {
       console.error('Unable to listen for Firestore user balance changes.', error);
       setLeaderboardMessage('Не вдалося підключити синхронізацію балансу.');
@@ -237,9 +248,12 @@
           id: telegramUser.id,
           ...firestoreProfileFields(),
           balance: 100,
+          diamonds: 0,
         });
       } else {
-        transaction.set(userDocumentRef, firestoreProfileFields(), { merge: true });
+        const profileFields = firestoreProfileFields();
+        if (snapshot.get('diamonds') == null) profileFields.diamonds = 0;
+        transaction.set(userDocumentRef, profileFields, { merge: true });
       }
     });
     playerDocumentRef = userDocumentRef;
@@ -264,6 +278,11 @@
       const element = document.getElementById(id);
       if (element) element.textContent = balance;
     });
+    const diamonds = String(window.APP_STATE.diamonds);
+    ['header-diamonds', 'profile-diamonds'].forEach((id) => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = diamonds;
+    });
   }
 
   function applyRemoteBalance(balance, source) {
@@ -273,6 +292,101 @@
     window.dispatchEvent(new CustomEvent('userbalancechange', {
       detail: { balance, delta: 0, source },
     }));
+  }
+
+  function applyRemoteDiamonds(diamonds) {
+    window.APP_STATE.diamonds = diamonds;
+    renderBalance();
+    window.dispatchEvent(new CustomEvent('userdiamondschange', {
+      detail: { diamonds, source: 'firestore' },
+    }));
+  }
+
+  function bindDiamondsShop() {
+    const modal = document.getElementById('diamonds-shop-modal');
+    const status = document.getElementById('diamonds-shop-status');
+    if (!modal || !status) return;
+
+    function closeShop() {
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+    }
+
+    document.querySelectorAll('[data-open-diamonds-shop]').forEach((button) => {
+      button.addEventListener('click', () => {
+        status.textContent = '';
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        modal.querySelector('[data-close-diamonds-shop]')?.focus();
+      });
+    });
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal || event.target.closest('[data-close-diamonds-shop]')) {
+        closeShop();
+        return;
+      }
+
+      const button = event.target.closest('[data-diamond-package]');
+      if (!button || button.disabled) return;
+      void purchaseDiamonds(button.dataset.diamondPackage, modal, status);
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && modal.classList.contains('open')) closeShop();
+    });
+  }
+
+  async function purchaseDiamonds(packageId, modal, status) {
+    const buttons = [...modal.querySelectorAll('[data-diamond-package]')];
+    const telegramUser = telegramWebApp?.initDataUnsafe?.user;
+    const initData = telegramWebApp?.initData;
+    if (!telegramUser?.id || !initData) {
+      status.textContent = 'Відкрийте магазин у Telegram, щоб купити діаманти.';
+      return;
+    }
+    if (typeof telegramWebApp.openInvoice !== 'function') {
+      status.textContent = 'Оплата Telegram Stars не підтримується цією версією Telegram.';
+      return;
+    }
+
+    buttons.forEach((button) => { button.disabled = true; });
+    status.textContent = 'Створюємо захищений рахунок…';
+    try {
+      const response = await fetch(`${DIAMONDS_API_URL}/api/create-diamonds-invoice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: String(telegramUser.id),
+          packageId,
+          initData,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Не вдалося створити рахунок.');
+      }
+      if (typeof result.invoiceUrl !== 'string' || !result.invoiceUrl.startsWith('https://')) {
+        throw new Error('Сервер повернув некоректне посилання на оплату.');
+      }
+
+      status.textContent = 'Відкриваємо оплату Telegram Stars…';
+      telegramWebApp.openInvoice(result.invoiceUrl, (invoiceStatus) => {
+        if (invoiceStatus === 'paid') {
+          status.textContent = 'Оплату прийнято. Баланс діамантів оновиться автоматично.';
+          window.TWA?.toast('Оплату прийнято!');
+        } else if (invoiceStatus === 'cancelled') {
+          status.textContent = 'Оплату скасовано.';
+        } else if (invoiceStatus === 'failed') {
+          status.textContent = 'Оплата не пройшла. Спробуйте ще раз.';
+        } else if (invoiceStatus === 'pending') {
+          status.textContent = 'Платіж обробляється. Діаманти нарахуються після підтвердження.';
+        }
+      });
+    } catch (error) {
+      console.error('Unable to start a diamonds purchase.', error);
+      status.textContent = error.message || 'Не вдалося розпочати оплату.';
+    } finally {
+      buttons.forEach((button) => { button.disabled = false; });
+    }
   }
 
   window.updateUserBalance = function updateUserBalance(delta) {
@@ -326,6 +440,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     renderBalance();
     renderTelegramProfile();
+    bindDiamondsShop();
     initializeLeaderboard().catch((error) => {
       console.error('Unable to initialize the Firestore leaderboard.', error);
       setLeaderboardMessage('Не вдалося підключити рейтинг.');
