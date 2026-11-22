@@ -10,6 +10,7 @@
   };
   let anonymousAuthPromise = null;
   let playerDocumentRef = null;
+  let pendingBalanceDelta = 0;
 
   window.APP_STATE = window.APP_STATE || {};
   window.APP_STATE.balance = readBalance();
@@ -18,11 +19,13 @@
     const user = window.Telegram?.WebApp?.initDataUnsafe?.user;
     const username = typeof user?.username === 'string' ? user.username.replace(/^@/, '') : '';
     const firstName = typeof user?.first_name === 'string' ? user.first_name.trim() : '';
+    const lastName = typeof user?.last_name === 'string' ? user.last_name.trim() : '';
     const telegramId = user?.id == null ? '' : String(user.id);
     return {
       id: telegramId || 'local-player',
       telegramId,
-      name: firstName || (username ? `@${username}` : 'Гравець'),
+      name: [firstName, lastName].filter(Boolean).join(' ')
+        || (username ? `@${username}` : `Гравець ${telegramId || ''}`.trim()),
       username: username ? `@${username}` : '',
       photoUrl: typeof user?.photo_url === 'string' ? user.photo_url : '',
     };
@@ -160,19 +163,38 @@
     list.replaceChildren(element);
   }
 
-  function syncLeaderboardProfile(balance = window.APP_STATE.balance) {
-    if (!playerDocumentRef) return Promise.resolve(false);
+  function firestoreProfileFields() {
     const profile = getCurrentPlayerProfile();
-    return playerDocumentRef.set({
+    return {
       telegramId: profile.telegramId,
-      username: profile.username,
+      username: profile.username.replace(/^@/, ''),
       name: profile.name,
       photoUrl: profile.photoUrl,
-      balance,
       updatedAt: Date.now(),
-    }, { merge: true }).then(() => true).catch((error) => {
-      console.error('Unable to update the Firestore player profile.', error);
-      return false;
+    };
+  }
+
+  function syncUserBalance(delta) {
+    if (!playerDocumentRef) {
+      pendingBalanceDelta += delta;
+      return;
+    }
+
+    playerDocumentRef.update({
+      ...firestoreProfileFields(),
+      balance: window.firebase.firestore.FieldValue.increment(delta),
+    }).catch(async (error) => {
+      console.error('Unable to update the Firestore user balance.', error);
+      try {
+        const snapshot = await playerDocumentRef.get();
+        const savedBalance = snapshot.get('balance');
+        if (snapshot.exists && Number.isSafeInteger(savedBalance) && savedBalance >= 0) {
+          applyRemoteBalance(savedBalance, 'firestore-recovery');
+        }
+      } catch (recoveryError) {
+        console.error('Unable to reload the Firestore user balance.', recoveryError);
+      }
+      window.TWA?.toast('Не вдалося синхронізувати баланс');
     });
   }
 
@@ -185,29 +207,56 @@
       throw new Error('Firebase SDK для рейтингу не завантажився.');
     }
 
-    if (!window.firebase.apps.length) window.firebase.initializeApp(window.FIREBASE_CONFIG);
-    const user = await getFirebaseUser();
-    const firestore = window.firebase.firestore();
-    playerDocumentRef = firestore.collection('players').doc(user.uid);
-    const playerDocument = await playerDocumentRef.get();
-    const savedBalance = playerDocument.data()?.balance;
-    if (playerDocument.exists && Number.isSafeInteger(savedBalance) && savedBalance >= 0) {
-      window.APP_STATE.balance = savedBalance;
-      localStorage.setItem(BALANCE_KEY, String(savedBalance));
-      renderBalance();
-      window.dispatchEvent(new CustomEvent('userbalancechange', {
-        detail: { balance: savedBalance, delta: 0, source: 'firestore' },
-      }));
+    const telegramUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+    if (telegramUser?.id == null) {
+      setLeaderboardMessage('Увійдіть у гру через Telegram, щоб синхронізувати баланс.');
+      return;
     }
 
-    firestore.collection('players')
+    if (!window.firebase.apps.length) window.firebase.initializeApp(window.FIREBASE_CONFIG);
+    await getFirebaseUser();
+    const firestore = window.firebase.firestore();
+    const userId = String(telegramUser.id);
+    const userDocumentRef = firestore.collection('users').doc(userId);
+    await firestore.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(userDocumentRef);
+      if (!snapshot.exists) {
+        transaction.set(userDocumentRef, {
+          id: telegramUser.id,
+          ...firestoreProfileFields(),
+          balance: 100,
+        });
+      } else {
+        transaction.set(userDocumentRef, firestoreProfileFields(), { merge: true });
+      }
+    });
+    playerDocumentRef = userDocumentRef;
+
+    playerDocumentRef.onSnapshot((snapshot) => {
+      const savedBalance = snapshot.get('balance');
+      if (!snapshot.exists || !Number.isSafeInteger(savedBalance) || savedBalance < 0) {
+        console.error(`Invalid balance in Firestore user document ${userId}.`);
+        return;
+      }
+      applyRemoteBalance(savedBalance, 'firestore');
+    }, (error) => {
+      console.error('Unable to listen for Firestore user balance changes.', error);
+      setLeaderboardMessage('Не вдалося підключити синхронізацію балансу.');
+    });
+
+    if (pendingBalanceDelta !== 0) {
+      const delta = pendingBalanceDelta;
+      pendingBalanceDelta = 0;
+      syncUserBalance(delta);
+    }
+
+    firestore.collection('users')
       .orderBy('balance', 'desc')
       .limit(10)
       .onSnapshot(renderLeaderboard, (error) => {
-        console.error('Unable to load the Firestore leaderboard.', error);
+        console.error('Unable to load the Firestore user leaderboard.', error);
         setLeaderboardMessage('Не вдалося завантажити рейтинг.');
       });
-    await syncLeaderboardProfile();
   }
 
   function renderBalance() {
@@ -216,6 +265,15 @@
       const element = document.getElementById(id);
       if (element) element.textContent = balance;
     });
+  }
+
+  function applyRemoteBalance(balance, source) {
+    window.APP_STATE.balance = balance;
+    localStorage.setItem(BALANCE_KEY, String(balance));
+    renderBalance();
+    window.dispatchEvent(new CustomEvent('userbalancechange', {
+      detail: { balance, delta: 0, source },
+    }));
   }
 
   window.updateUserBalance = function updateUserBalance(delta) {
@@ -230,7 +288,7 @@
     localStorage.setItem(BALANCE_KEY, String(nextBalance));
     window.APP_STATE.balance = nextBalance;
     renderBalance();
-    syncLeaderboardProfile(nextBalance);
+    syncUserBalance(delta);
     window.dispatchEvent(new CustomEvent('userbalancechange', {
       detail: { balance: nextBalance, delta },
     }));

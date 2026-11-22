@@ -35,6 +35,27 @@ service cloud.firestore {
         newSeats.keys().size() <= newMeta.get('settings', {}).get('players', 2);
     }
 
+    function validUserProfile() {
+      let profile = request.resource.data;
+      return profile.keys().hasOnly([
+          'id', 'name', 'username', 'balance', 'telegramId', 'photoUrl', 'updatedAt'
+        ]) &&
+        profile.get('id', 0) is int &&
+        profile.get('name', '') is string &&
+        profile.get('username', '') is string &&
+        profile.get('balance', -1) is int &&
+        profile.get('balance', -1) >= 0 &&
+        profile.get('telegramId', '') is string &&
+        profile.get('photoUrl', '') is string &&
+        profile.get('updatedAt', 0) is int;
+    }
+
+    match /users/{telegramId} {
+      allow get, list: if signedIn();
+      allow create, update: if signedIn() && validUserProfile();
+      allow delete: if false;
+    }
+
     match /players/{uid} {
       allow get, list: if signedIn();
       allow create, update: if signedIn() &&
