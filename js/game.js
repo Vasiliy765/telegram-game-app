@@ -566,7 +566,10 @@
     try {
       const response = await fetch(`${DIAMONDS_API_URL}/api/create-diamonds-invoice`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Telegram-Init-Data': initData,
+        },
         body: JSON.stringify({
           userId: String(telegramUser.id),
           packageId,

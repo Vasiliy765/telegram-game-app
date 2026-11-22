@@ -8,7 +8,11 @@ const { Bot } = require('node-telegram-bot-api');
 const { run } = require('node-telegram-bot-api/node');
 const admin = require('firebase-admin');
 
-const BOT_TOKEN = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || process.env.TOKEN;
+const BOT_TOKEN = [
+  process.env.BOT_TOKEN,
+  process.env.TELEGRAM_BOT_TOKEN,
+  process.env.TOKEN,
+].map((token) => token?.trim()).find(Boolean);
 if (!BOT_TOKEN) {
   throw new Error('A bot token is required. Set BOT_TOKEN, TELEGRAM_BOT_TOKEN, or TOKEN before starting the bot.');
 }
@@ -396,7 +400,7 @@ function validateTelegramInitData(initData) {
   }
   params.delete('hash');
   const dataCheckString = [...params.entries()]
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, value]) => `${key}=${value}`)
     .join('\n');
   const secretKey = crypto.createHmac('sha256', BOT_TOKEN)
@@ -1453,7 +1457,7 @@ const server = http.createServer((request, response) => {
     }
     response.writeHead(204, {
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, X-Telegram-Init-Data',
       'Access-Control-Max-Age': '600',
     });
     response.end();
@@ -1488,7 +1492,11 @@ const server = http.createServer((request, response) => {
       if (!Object.hasOwn(DIAMOND_PACKAGES, packageId)) {
         throw httpError(400, 'Unknown diamond package.');
       }
-      const telegramUser = validateTelegramInitData(body.initData);
+      const headerInitData = request.headers['x-telegram-init-data'];
+      const initData = typeof body.initData === 'string' && body.initData.length > 0
+        ? body.initData
+        : headerInitData;
+      const telegramUser = validateTelegramInitData(initData);
       if (String(telegramUser.id) !== userId) {
         throw httpError(403, 'Telegram user does not match the invoice owner.');
       }
