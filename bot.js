@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const crypto = require('node:crypto');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const http = require('node:http');
 const path = require('node:path');
 const { Bot } = require('node-telegram-bot-api');
@@ -24,6 +25,7 @@ const users = db.collection('users');
 const challenges = db.collection('challenges');
 const diamondPurchases = db.collection('diamondPurchases');
 const bot = new Bot(process.env.BOT_TOKEN);
+const updateContext = new AsyncLocalStorage();
 const WEBAPP_URL = 'https://vasiliy765.github.io/telegram-game-app/';
 const WEBAPP_ORIGIN = new URL(WEBAPP_URL).origin;
 const SALARY_COOLDOWN_MS = 3 * 60 * 60 * 1000;
@@ -48,12 +50,36 @@ const BOT_COMMANDS = [
   { command: 'support', description: 'Зв’язатися з адміном' },
 ];
 
-function sendMessage(chatId, text, options = {}) {
-  return bot.api.sendMessage({ chat_id: chatId, text, ...options });
+function threadOptions(chatId, options = {}, threadId) {
+  const active = updateContext.getStore();
+  const inheritedThreadId = active && String(active.chatId) === String(chatId)
+    ? active.threadId
+    : undefined;
+  const resolvedThreadId = threadId === undefined ? inheritedThreadId : threadId;
+  return {
+    ...options,
+    ...(resolvedThreadId ? { message_thread_id: resolvedThreadId } : {}),
+  };
 }
 
-function sendDice(chatId, options) {
-  return bot.api.sendDice({ chat_id: chatId, ...options });
+function sendMessage(chatId, text, options = {}, threadId) {
+  return bot.api.sendMessage(threadOptions(chatId, { chat_id: chatId, text, ...options }, threadId));
+}
+
+function sendDice(chatId, options = {}, threadId) {
+  return bot.api.sendDice(threadOptions(chatId, { chat_id: chatId, ...options }, threadId));
+}
+
+function sendPhoto(options, threadId) {
+  return bot.api.sendPhoto(threadOptions(options.chat_id, options, threadId));
+}
+
+function sendVideo(options, threadId) {
+  return bot.api.sendVideo(threadOptions(options.chat_id, options, threadId));
+}
+
+function copyMessage(options, threadId) {
+  return bot.api.copyMessage(threadOptions(options.chat_id, options, threadId));
 }
 
 function answerCallbackQuery(context, options) {
@@ -144,6 +170,29 @@ async function saveGroupChat(chat) {
   }, { merge: true });
 }
 
+function onUpdate(eventName, handler) {
+  return bot.on(eventName, (context) => {
+    const update = context.update || {};
+    const message = context.message || update.message;
+    const query = context.callbackQuery || update.callback_query;
+    const chatMember = context.myChatMember || context.my_chat_member || update.my_chat_member;
+    const messageContext = message || query?.message;
+    const chat = messageContext?.chat || chatMember?.chat;
+    const threadId = message?.message_thread_id || query?.message?.message_thread_id;
+
+    return updateContext.run({ chatId: chat?.id, threadId }, async () => {
+      if (chat && isGroup(chat)) {
+        try {
+          await saveGroupChat(chat);
+        } catch (error) {
+          console.error('Failed to save active group chat:', error);
+        }
+      }
+      return handler(context);
+    });
+  });
+}
+
 async function sendPlay(chatId, chatType) {
   const keyboard = chatType === 'private'
     ? { text: '🎮 Запустити ШПИГУН', web_app: { url: WEBAPP_URL } }
@@ -200,20 +249,20 @@ async function forwardSupportRequest(message) {
     await sendMessage(chatId, `${header}\n\n${message.text}`);
   } else if (message.photo?.length) {
     const photoId = message.photo[message.photo.length - 1].file_id;
-    await bot.api.sendPhoto({
+    await sendPhoto({
       chat_id: chatId,
       photo: photoId,
       caption: `${header}${message.caption ? `\n\n${message.caption}` : ''}`.slice(0, 1024),
     });
   } else if (message.video) {
-    await bot.api.sendVideo({
+    await sendVideo({
       chat_id: chatId,
       video: message.video.file_id,
       caption: `${header}${message.caption ? `\n\n${message.caption}` : ''}`.slice(0, 1024),
     });
   } else {
     const headerMessage = await sendMessage(chatId, header);
-    await bot.api.copyMessage({
+    await copyMessage({
       chat_id: chatId,
       from_chat_id: message.chat.id,
       message_id: message.message_id,
@@ -240,20 +289,20 @@ async function sendAdminReply(message, userId) {
   if (message.text) {
     await sendMessage(userId, `${prefix}\n\n${message.text}`);
   } else if (message.photo?.length) {
-    await bot.api.sendPhoto({
+    await sendPhoto({
       chat_id: userId,
       photo: message.photo[message.photo.length - 1].file_id,
       caption: `${prefix}${message.caption ? `\n\n${message.caption}` : ''}`.slice(0, 1024),
     });
   } else if (message.video) {
-    await bot.api.sendVideo({
+    await sendVideo({
       chat_id: userId,
       video: message.video.file_id,
       caption: `${prefix}${message.caption ? `\n\n${message.caption}` : ''}`.slice(0, 1024),
     });
   } else {
     await sendMessage(userId, prefix);
-    await bot.api.copyMessage({
+    await copyMessage({
       chat_id: userId,
       from_chat_id: message.chat.id,
       message_id: message.message_id,
@@ -627,7 +676,7 @@ async function broadcastToChat(chatId, content) {
     await sendMessage(chatId, content.text);
     return;
   }
-  await bot.api.copyMessage({
+  await copyMessage({
     chat_id: chatId,
     from_chat_id: content.chatId,
     message_id: content.messageId,
@@ -656,7 +705,7 @@ async function prepareBroadcast(message, text) {
       },
     });
     if (repliedMessage) {
-      await bot.api.copyMessage({
+      await copyMessage({
         chat_id: message.chat.id,
         from_chat_id: message.chat.id,
         message_id: repliedMessage.message_id,
@@ -693,10 +742,15 @@ async function runBroadcast(broadcastId, callbackContext) {
     users.get(),
     db.collection('chats').get(),
   ]);
-  const targets = [
-    ...userSnapshot.docs.map((document) => ({ id: document.id, kind: 'private' })),
-    ...chatSnapshot.docs.map((document) => ({ id: document.id, kind: 'group' })),
-  ];
+  const targetsById = new Map();
+  userSnapshot.docs.forEach((document) => {
+    targetsById.set(String(document.id), { id: document.id, kind: 'private' });
+  });
+  chatSnapshot.docs.forEach((document) => {
+    const id = String(document.id);
+    if (!targetsById.has(id)) targetsById.set(id, { id: document.id, kind: 'group' });
+  });
+  const targets = [...targetsById.values()];
   let privateDelivered = 0;
   let groupDelivered = 0;
   let failed = 0;
@@ -749,6 +803,7 @@ async function createChallenge(message, game, stake) {
   const challengeId = crypto.randomUUID();
   const challenge = {
     chatId: message.chat.id,
+    threadId: message.message_thread_id || null,
     creatorId: authorId,
     creatorName: displayName(author),
     targetId: targeted ? telegramId(replyUser) : null,
@@ -808,7 +863,7 @@ async function declineChallenge(query, challengeId, actorId) {
   } catch (error) {
     console.error('Failed to remove declined challenge buttons:', error);
   }
-  await sendMessage(result.challenge.chatId, '❌ Виклик відхилено.');
+  await sendMessage(result.challenge.chatId, '❌ Виклик відхилено.', {}, result.challenge.threadId);
 }
 
 async function beginChallenge(query, challengeId, actorId) {
@@ -971,8 +1026,8 @@ async function refundFailedDice(challengeId) {
 async function playDice(challengeId, challenge, accepterName) {
   let result;
   try {
-    const creatorDice = await sendDice(challenge.chatId, { emoji: '🎲' });
-    const accepterDice = await sendDice(challenge.chatId, { emoji: '🎲' });
+    const creatorDice = await sendDice(challenge.chatId, { emoji: '🎲' }, challenge.threadId);
+    const accepterDice = await sendDice(challenge.chatId, { emoji: '🎲' }, challenge.threadId);
     await new Promise((resolve) => setTimeout(resolve, 3500));
 
     result = await settleDice(
@@ -994,6 +1049,8 @@ async function playDice(challengeId, challenge, accepterName) {
         refunded
           ? 'Не вдалося завершити гру в кубик. Ставки обом гравцям повернуто.'
           : 'Не вдалося завершити гру в кубик. Перевірте баланс або зверніться до адміністратора.',
+        {},
+        challenge.threadId,
       );
     } catch (notificationError) {
       console.error('Failed to report dice challenge failure:', notificationError);
@@ -1008,6 +1065,7 @@ async function playDice(challengeId, challenge, accepterName) {
         `🤝 Нічия! ${escapeHtml(challenge.creatorName)} — ${result.challenge.stake} 🪙 `
           + `і ${escapeHtml(accepterName)} — ${result.challenge.stake} 🪙 повернуто.`,
         { parse_mode: 'HTML' },
+        challenge.threadId,
       );
     } catch (error) {
       console.error('Failed to announce dice draw:', error);
@@ -1025,6 +1083,7 @@ async function playDice(challengeId, challenge, accepterName) {
           + `🏆 Переміг <b>${escapeHtml(winnerName)}</b> і отримав `
           + `<b>${formatCoins(result.payout)} 🪙</b>!`,
         { parse_mode: 'HTML' },
+        challenge.threadId,
       );
     } catch (error) {
       console.error('Failed to announce dice winner:', error);
@@ -1032,17 +1091,10 @@ async function playDice(challengeId, challenge, accepterName) {
   }
 }
 
-bot.on('message', async (context) => {
+onUpdate('message', async (context) => {
   const message = context.message;
 
   try {
-    if (isGroup(message.chat)) {
-      try {
-        await saveGroupChat(message.chat);
-      } catch (error) {
-        console.error('Failed to save active group chat:', error);
-      }
-    }
     if (message.successful_payment) {
       await processSuccessfulDiamondPayment(message);
       return;
@@ -1220,16 +1272,9 @@ bot.on('pre_checkout_query', async (context) => {
   }
 });
 
-bot.on('callback_query', async (context) => {
+onUpdate('callback_query', async (context) => {
   const query = context.callbackQuery;
   const callbackMessage = query?.message;
-  if (callbackMessage && isGroup(callbackMessage.chat)) {
-    try {
-      await saveGroupChat(callbackMessage.chat);
-    } catch (error) {
-      console.error('Failed to save active group chat from callback:', error);
-    }
-  }
   if (query?.data === 'support:cancel') {
     if (supportRequests.delete(telegramId(context.from))) {
       await answerCallbackQuery(context, { text: 'Звернення скасовано.' });
@@ -1308,6 +1353,7 @@ bot.on('callback_query', async (context) => {
         `🪙 Переміг <b>${escapeHtml(result.winnerName)}</b>! `
           + `Виграш: <b>${formatCoins(result.payout)} 🪙</b>.`,
         { parse_mode: 'HTML' },
+        result.challenge.threadId,
       );
       return;
     }
@@ -1326,6 +1372,8 @@ bot.on('callback_query', async (context) => {
   }
 });
 
+onUpdate('my_chat_member', async () => {});
+
 bot.catch((error) => {
   console.error('Telegram update failed:', error);
 });
@@ -1336,18 +1384,27 @@ function sendJson(response, statusCode, data) {
 }
 
 async function configureCommandMenus() {
-  await bot.api.setMyCommands({ commands: BOT_COMMANDS });
-  try {
-    await bot.api.setMyCommands({
-      commands: [
-        ...BOT_COMMANDS,
-        { command: 'broadcast', description: 'Розсилка в усі чати та особисті' },
-      ],
-      scope: { type: 'chat', chat_id: Number(ADMIN_ID) },
-    });
-  } catch (error) {
-    console.error('Unable to set the administrator command menu:', error);
-  }
+  await Promise.all([
+    bot.api.deleteMyCommands(),
+    bot.api.deleteMyCommands({ scope: { type: 'all_private_chats' } }),
+    bot.api.deleteMyCommands({ scope: { type: 'all_group_chats' } }),
+    ...['uk', 'ru', 'en'].map((language_code) => bot.api.deleteMyCommands({ language_code })),
+  ]);
+  await bot.api.setMyCommands({
+    commands: BOT_COMMANDS,
+    scope: { type: 'default' },
+  });
+  await bot.api.setMyCommands({
+    commands: BOT_COMMANDS,
+    scope: { type: 'all_private_chats' },
+  });
+  await bot.api.setMyCommands({
+    commands: [
+      ...BOT_COMMANDS,
+      { command: 'broadcast', description: 'Розсилка в усі чати та особисті' },
+    ],
+    scope: { type: 'chat', chat_id: Number(ADMIN_ID) },
+  });
 }
 
 async function readJsonBody(request) {
@@ -1455,7 +1512,7 @@ async function startBot() {
 
   const polling = run(bot, {
     exitOnError: true,
-    allowedUpdates: ['message', 'callback_query', 'pre_checkout_query'],
+    allowedUpdates: ['message', 'callback_query', 'pre_checkout_query', 'my_chat_member'],
   });
   console.log('Бот успішно запущений!');
   await polling;
