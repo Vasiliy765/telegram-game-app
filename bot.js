@@ -24,6 +24,7 @@ const users = db.collection('users');
 const challenges = db.collection('challenges');
 const bot = new Bot(process.env.BOT_TOKEN);
 const WEBAPP_URL = 'https://vasiliy765.github.io/telegram-game-app/';
+const SALARY_COOLDOWN_MS = 3 * 60 * 60 * 1000;
 
 function sendMessage(chatId, text, options = {}) {
   return bot.api.sendMessage({ chat_id: chatId, text, ...options });
@@ -114,6 +115,66 @@ async function sendBalance(chatId, user) {
   await sendMessage(
     chatId,
     `🪙 Баланс ${escapeHtml(displayName(user))}: <b>${formatCoins(snapshot.get('balance'))}</b> монет.`,
+    { parse_mode: 'HTML' },
+  );
+}
+
+async function sendSalary(chatId, user) {
+  const reward = Math.random() < 0.9
+    ? Math.floor(Math.random() * 9) + 1
+    : Math.floor(Math.random() * 6) + 10;
+  const now = Date.now();
+  const userRef = users.doc(telegramId(user));
+  const result = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(userRef);
+    if (snapshot.exists) {
+      const lastSalaryAt = Number(snapshot.get('lastSalaryAt'));
+      if (Number.isFinite(lastSalaryAt) && now - lastSalaryAt < SALARY_COOLDOWN_MS) {
+        return { kind: 'cooldown', remainingMs: SALARY_COOLDOWN_MS - (now - lastSalaryAt) };
+      }
+
+      const balance = snapshot.get('balance');
+      transaction.update(userRef, {
+        balance: admin.firestore.FieldValue.increment(reward),
+        lastSalaryAt: now,
+        name: displayName(user),
+        username: user.username || '',
+      });
+      return {
+        kind: 'paid',
+        balance: (typeof balance === 'number' && Number.isFinite(balance) ? balance : 0) + reward,
+      };
+    }
+
+    transaction.create(userRef, {
+      id: user.id,
+      name: displayName(user),
+      username: user.username || '',
+      balance: 100 + reward,
+      lastSalaryAt: now,
+    });
+    return { kind: 'paid', balance: 100 + reward };
+  });
+
+  if (result.kind === 'cooldown') {
+    const minutesLeft = Math.ceil(result.remainingMs / 60_000);
+    const hours = Math.floor(minutesLeft / 60);
+    const minutes = minutesLeft % 60;
+    await sendMessage(
+      chatId,
+      `⏳ Наступна зарплата буде доступна через <b>${hours} год ${minutes} хв</b>.`,
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  const rewardText = `<b>${reward} 🪙</b>`;
+  const bonusText = reward >= 10 ? '✨ <b>Рідкісний бонус!</b>\n' : '';
+  await sendMessage(
+    chatId,
+    `💰 <b>Зарплату нараховано!</b>\n${bonusText}`
+      + `Твоя винагорода: ${rewardText}\n`
+      + `Загальний баланс: <b>${formatCoins(result.balance)} 🪙</b>`,
     { parse_mode: 'HTML' },
   );
 }
@@ -470,6 +531,10 @@ bot.on('message', async (context) => {
     }
     if (/^топ$/i.test(message.text.trim())) {
       await sendTop(message.chat.id);
+      return;
+    }
+    if (/^(зп|зарплата)$/i.test(message.text.trim())) {
+      await sendSalary(message.chat.id, message.from);
       return;
     }
 
