@@ -62,7 +62,7 @@ service cloud.firestore {
         (profile.get('id', 0) is int || profile.get('id', '') is string) &&
         profile.get('name', '') is string &&
         profile.get('username', '') is string &&
-        profile.get('balance', -1) is int &&
+        (profile.get('balance', -1) is int || profile.get('balance', -1) is float) &&
         profile.get('balance', -1) >= 0 &&
         profile.get('telegramId', '') is string &&
         profile.get('photoUrl', '') is string &&

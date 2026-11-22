@@ -6,6 +6,9 @@
   const BALANCE_KEY = 'tga_balance';
   const DIAMONDS_API_URL = 'https://telegram-game-app.onrender.com';
   const DEFAULT_CARD_SKIN = 'classic-red';
+  const parseNum = (value) =>
+    Number(String(value ?? 0).replace(',', '.').replace(/\s+/g, '')) || 0;
+  window.parseNum = parseNum;
   const readBalance = () => {
     const value = Number(localStorage.getItem(BALANCE_KEY) || '0');
     return isValidCurrencyBalance(value) ? value : 0;
@@ -390,7 +393,7 @@
       console.error('Unable to update the Firestore user balance.', error);
       try {
         const snapshot = await playerDocumentRef.get();
-        const savedBalance = snapshot.get('balance');
+        const savedBalance = parseNum(snapshot.get('balance'));
         if (snapshot.exists && isValidCurrencyBalance(savedBalance)) {
           applyRemoteBalance(savedBalance, 'firestore-recovery');
         }
@@ -422,7 +425,7 @@
     const userDocumentRef = firestore.collection('users').doc(userId);
     userDocumentRef.onSnapshot((snapshot) => {
       if (!snapshot.exists) return;
-      const savedBalance = snapshot.get('balance');
+      const savedBalance = parseNum(snapshot.get('balance'));
       if (!isValidCurrencyBalance(savedBalance)) {
         console.error(`Invalid balance in Firestore user document ${userId}.`);
       } else {
@@ -457,6 +460,11 @@
         });
       } else {
         const profileFields = firestoreProfileFields();
+        const savedBalance = parseNum(snapshot.get('balance'));
+        if (!isValidCurrencyBalance(savedBalance)) {
+          throw new Error(`Invalid balance in Firestore user document ${userId}.`);
+        }
+        profileFields.balance = Math.round(savedBalance * 100) / 100;
         if (snapshot.get('diamonds') == null) profileFields.diamonds = 0;
         const knownSkins = window.CARDS?.CARD_SKIN_KEYS || [DEFAULT_CARD_SKIN];
         const savedSkins = snapshot.get('ownedSkins');
@@ -505,7 +513,7 @@
       throw new Error(`Firestore user document ${userId} does not exist.`);
     }
 
-    const balance = Number(snapshot.data()?.balance || 0);
+    const balance = parseNum(snapshot.data()?.balance);
     if (!isValidCurrencyBalance(balance)) {
       throw new Error(`Invalid balance in Firestore user document ${userId}.`);
     }

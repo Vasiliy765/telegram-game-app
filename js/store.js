@@ -53,12 +53,13 @@ window.Store = (() => {
     }
     const userRef = await window.getCurrentUserDocumentRef();
     const firestore = window.firebase.firestore();
-    return firestore.runTransaction((transaction) => callback(transaction, userRef, firestore));
+    return firestore.runTransaction((transaction) => callback(transaction, userRef));
   }
 
   function readBalance(snapshot, field) {
-    const value = snapshot.get(field) ?? 0;
-    if (!Number.isSafeInteger(value) || value < 0) {
+    const value = window.parseNum(snapshot.get(field));
+    if (!Number.isFinite(value) || value < 0 || value > Number.MAX_SAFE_INTEGER ||
+        (field === 'diamonds' && !Number.isSafeInteger(value))) {
       throw new Error(`Некоректний баланс ${field} у Firestore.`);
     }
     return value;
@@ -86,7 +87,7 @@ window.Store = (() => {
     setActionStatus('Перевіряємо баланс у Firestore…');
     renderExchangeButtons();
     try {
-      const result = await runUserTransaction(async (transaction, userRef, firestore) => {
+      const result = await runUserTransaction(async (transaction, userRef) => {
         const snapshot = await transaction.get(userRef);
         if (!snapshot.exists) throw new Error('Профіль Firestore не знайдено.');
         const diamonds = readBalance(snapshot, 'diamonds');
@@ -95,13 +96,15 @@ window.Store = (() => {
         if (balance + offer.coins > Number.MAX_SAFE_INTEGER) {
           throw new Error('Баланс монет перевищить допустиме значення.');
         }
+        const newBalance = Math.round((balance + offer.coins) * 100) / 100;
+        const newDiamonds = diamonds - offer.diamonds;
         transaction.update(userRef, {
-          diamonds: firestore.FieldValue.increment(-offer.diamonds),
-          balance: firestore.FieldValue.increment(offer.coins),
+          diamonds: newDiamonds,
+          balance: newBalance,
         });
         return {
-          diamonds: diamonds - offer.diamonds,
-          balance: balance + offer.coins,
+          diamonds: newDiamonds,
+          balance: newBalance,
           ownedSkins: Array.isArray(snapshot.get('ownedSkins'))
             ? snapshot.get('ownedSkins')
             : [DEFAULT_SKIN],
@@ -132,7 +135,7 @@ window.Store = (() => {
     setActionStatus(`Оновлюємо скін «${skin.name}»…`, 'store-skins-status');
     renderSkins();
     try {
-      const result = await runUserTransaction(async (transaction, userRef, firestore) => {
+      const result = await runUserTransaction(async (transaction, userRef) => {
         const snapshot = await transaction.get(userRef);
         if (!snapshot.exists) throw new Error('Профіль Firestore не знайдено.');
         const ownedSkins = Array.isArray(snapshot.get('ownedSkins'))
@@ -144,34 +147,39 @@ window.Store = (() => {
           if (currentBalance < skin.cost) {
             throw new Error(`Недостатньо ${skin.currency === 'diamonds' ? '💎' : '🪙'} для покупки.`);
           }
+          const newBalance = skin.currency === 'balance'
+            ? Math.round((currentBalance - skin.cost) * 100) / 100
+            : Math.round(readBalance(snapshot, 'balance') * 100) / 100;
+          const newDiamonds = skin.currency === 'diamonds'
+            ? currentBalance - skin.cost
+            : readBalance(snapshot, 'diamonds');
+          const newOwnedSkins = [...new Set([...ownedSkins, key])];
           transaction.update(userRef, {
-            [skin.currency]: firestore.FieldValue.increment(-skin.cost),
-            ownedSkins: firestore.FieldValue.arrayUnion(key),
+            balance: newBalance,
+            diamonds: newDiamonds,
+            ownedSkins: newOwnedSkins,
             activeSkin: key,
           });
           return {
-            balance: skin.currency === 'balance' ? currentBalance - skin.cost : readBalance(snapshot, 'balance'),
-            diamonds: skin.currency === 'diamonds'
-              ? currentBalance - skin.cost
-              : readBalance(snapshot, 'diamonds'),
-            ownedSkins: [...new Set([...ownedSkins, key])],
+            balance: newBalance,
+            diamonds: newDiamonds,
+            ownedSkins: newOwnedSkins,
             activeSkin: key,
             vipUntil: Number(snapshot.get('vipUntil')) || 0,
             newlyPurchased: true,
           };
         }
+        let newOwnedSkins = ownedSkins;
         if (!alreadyOwned) {
-          transaction.update(userRef, {
-            ownedSkins: firestore.FieldValue.arrayUnion(key),
-            activeSkin: key,
-          });
+          newOwnedSkins = [...new Set([...ownedSkins, key])];
+          transaction.update(userRef, { ownedSkins: newOwnedSkins, activeSkin: key });
         } else {
           transaction.update(userRef, { activeSkin: key });
         }
         return {
           balance: readBalance(snapshot, 'balance'),
           diamonds: readBalance(snapshot, 'diamonds'),
-          ownedSkins: alreadyOwned ? ownedSkins : [...new Set([...ownedSkins, key])],
+          ownedSkins: newOwnedSkins,
           activeSkin: key,
           vipUntil: Number(snapshot.get('vipUntil')) || 0,
           newlyPurchased: false,
@@ -199,20 +207,23 @@ window.Store = (() => {
     setActionStatus('Перевіряємо баланс діамантів…', 'store-vip-action-status');
     renderVip();
     try {
-      const result = await runUserTransaction(async (transaction, userRef, firestore) => {
+      const result = await runUserTransaction(async (transaction, userRef) => {
         const snapshot = await transaction.get(userRef);
         if (!snapshot.exists) throw new Error('Профіль Firestore не знайдено.');
         const diamonds = readBalance(snapshot, 'diamonds');
         const balance = readBalance(snapshot, 'balance');
         if (diamonds < VIP_COST) throw new Error('Для VIP потрібно 40 💎.');
         const vipUntil = Date.now() + VIP_DURATION_MS;
+        const newDiamonds = diamonds - VIP_COST;
+        const newBalance = Math.round(balance * 100) / 100;
         transaction.update(userRef, {
-          diamonds: firestore.FieldValue.increment(-VIP_COST),
+          diamonds: newDiamonds,
+          balance: newBalance,
           vipUntil,
         });
         return {
-          balance,
-          diamonds: diamonds - VIP_COST,
+          balance: newBalance,
+          diamonds: newDiamonds,
           ownedSkins: Array.isArray(snapshot.get('ownedSkins'))
             ? snapshot.get('ownedSkins')
             : [DEFAULT_SKIN],
@@ -295,42 +306,8 @@ window.Store = (() => {
     }
   }
 
-  function renderStars() {
-    const element = $('store-stars');
-    if (!element) return;
-    element.replaceChildren();
-    [
-      { amount: 50, label: '50 ⭐' },
-      { amount: 200, label: '200 ⭐', primary: true },
-      { amount: 500, label: '500 ⭐' },
-      { amount: 1000, label: '1000 ⭐' },
-    ].forEach((pack) => {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = `star-pack${pack.primary ? ' primary' : ''}`;
-      item.innerHTML = `<span class="pack-amount">${pack.label}</span><span class="pack-label"> Stars</span>`;
-      item.addEventListener('click', () => {
-        window.TWA?.haptic?.();
-        void buyStars(pack.amount);
-      });
-      element.appendChild(item);
-    });
-  }
-
-  async function buyStars(amount) {
-    try {
-      const result = await window.TWA.sendStarsInvoice(amount, 'Поповнення ігрового балансу');
-      if (result.status === 'paid') {
-        if (window.updateUserBalance(amount)) toast(`Нараховано ${amount} 🪙`);
-      }
-    } catch (error) {
-      toast(error.message || 'Оплата скасована або не підтримується');
-    }
-  }
-
   function init() {
     syncFromAppState();
-    renderStars();
     renderExchangeButtons();
     renderSkins();
     renderVip();
