@@ -45,6 +45,7 @@ const DIAMOND_PACKAGES = Object.freeze({
 const DIAMONDS_ADMIN_ID = '7784142934';
 const ADMIN_ID = '7784142934';
 const supportRequests = new Map();
+const adminReplyState = new Map();
 const pendingBroadcasts = new Map();
 const BOT_COMMANDS = [
   { command: 'start', description: 'Відкрити ШПИГУН' },
@@ -282,20 +283,28 @@ function supportHeader(user) {
 async function forwardSupportRequest(message) {
   const header = supportHeader(message.from);
   const chatId = Number(ADMIN_ID);
+  const replyMarkup = {
+    inline_keyboard: [[{
+      text: '💬 Відповісти гравцю',
+      callback_data: `reply_support_${telegramId(message.from)}`,
+    }]],
+  };
   if (message.text) {
-    await sendMessage(chatId, `${header}\n\n${message.text}`);
+    await sendMessage(chatId, `${header}\n\n${message.text}`, { reply_markup: replyMarkup });
   } else if (message.photo?.length) {
     const photoId = message.photo[message.photo.length - 1].file_id;
     await sendPhoto({
       chat_id: chatId,
       photo: photoId,
       caption: `${header}${message.caption ? `\n\n${message.caption}` : ''}`.slice(0, 1024),
+      reply_markup: replyMarkup,
     });
   } else if (message.video) {
     await sendVideo({
       chat_id: chatId,
       video: message.video.file_id,
       caption: `${header}${message.caption ? `\n\n${message.caption}` : ''}`.slice(0, 1024),
+      reply_markup: replyMarkup,
     });
   } else {
     const headerMessage = await sendMessage(chatId, header);
@@ -304,6 +313,7 @@ async function forwardSupportRequest(message) {
       from_chat_id: message.chat.id,
       message_id: message.message_id,
       reply_parameters: { message_id: headerMessage.message_id },
+      reply_markup: replyMarkup,
     });
   }
   supportRequests.delete(telegramId(message.from));
@@ -1146,6 +1156,24 @@ onUpdate('message', async (context) => {
     }
 
     const senderId = telegramId(message.from);
+    const pendingAdminReply = adminReplyState.get(senderId);
+    if (senderId === ADMIN_ID && pendingAdminReply &&
+        String(message.chat.id) === String(pendingAdminReply.chatId)) {
+      if (message.text?.trim().match(/^\/cancel(?:@\w+)?(?:\s|$)/i)) {
+        adminReplyState.delete(senderId);
+        await sendMessage(message.chat.id, 'Відповідь скасовано.');
+        return;
+      }
+      if (!message.text && !message.photo?.length && !message.video) {
+        await sendMessage(message.chat.id, 'Надішліть текст або фото відповіді або натисніть «❌ Скасувати».');
+        return;
+      }
+      await sendAdminReply(message, pendingAdminReply.userId);
+      adminReplyState.delete(senderId);
+      await sendMessage(message.chat.id, '✅ Відповідь надіслано гравцю!');
+      return;
+    }
+
     if (senderId === ADMIN_ID && message.reply_to_message) {
       const supportUserId = findSupportUserId(message);
       if (supportUserId) {
@@ -1320,6 +1348,51 @@ bot.on('pre_checkout_query', async (context) => {
 onUpdate('callback_query', async (context) => {
   const query = context.callbackQuery;
   const callbackMessage = query?.message;
+  const supportReply = query?.data?.match(/^reply_support_(\d{1,20})$/);
+  if (supportReply) {
+    if (telegramId(context.from) !== ADMIN_ID) {
+      await answerCallbackQuery(context, {
+        text: 'Команда доступна лише адміністратору.',
+        show_alert: true,
+      });
+      return;
+    }
+    if (!callbackMessage) {
+      await answerCallbackQuery(context, { text: 'Не вдалося визначити чат адміністратора.', show_alert: true });
+      return;
+    }
+    adminReplyState.set(ADMIN_ID, {
+      userId: supportReply[1],
+      chatId: callbackMessage.chat.id,
+    });
+    await answerCallbackQuery(context, { text: 'Введіть відповідь гравцю.' });
+    await sendMessage(
+      callbackMessage.chat.id,
+      '✍️ Введіть текст або надішліть фото відповіді гравцю.',
+      {
+        reply_markup: {
+          inline_keyboard: [[{ text: '❌ Скасувати', callback_data: 'support:reply_cancel' }]],
+        },
+      },
+    );
+    return;
+  }
+  if (query?.data === 'support:reply_cancel') {
+    if (telegramId(context.from) !== ADMIN_ID) {
+      await answerCallbackQuery(context, {
+        text: 'Команда доступна лише адміністратору.',
+        show_alert: true,
+      });
+      return;
+    }
+    const pending = adminReplyState.get(ADMIN_ID);
+    adminReplyState.delete(ADMIN_ID);
+    await answerCallbackQuery(context, { text: 'Відповідь скасовано.' });
+    if (pending && callbackMessage) {
+      await sendMessage(callbackMessage.chat.id, 'Відповідь скасовано.');
+    }
+    return;
+  }
   if (query?.data === 'support:cancel') {
     if (supportRequests.delete(telegramId(context.from))) {
       await answerCallbackQuery(context, { text: 'Звернення скасовано.' });

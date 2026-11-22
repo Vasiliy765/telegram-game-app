@@ -6,6 +6,7 @@ window.DurakRoom = (() => {
   const adjectives = ['Сміливий', 'Тихий', 'Веселий', 'Миткий'];
   const nouns = ['Лис', 'Ведмідь', 'Вовк', 'Орел'];
   let publicRoomsUnmount = null;
+  let reactionTimer = null;
   let state = {
     roomCode: '',
     settings: { ...defaultSettings },
@@ -492,34 +493,59 @@ window.DurakRoom = (() => {
     state.actionListener = { off: () => actions.off('child_added', callback) };
   }
 
-  async function sendReaction(emoji) {
-    const roomId = state.isOnline ? state.roomCode : '';
-    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-    const myId = tgUser?.id;
-    if (!roomId || typeof emoji !== 'string') return;
-    if (vipReactions.has(emoji) && !(Number(window.APP_STATE?.vipUntil || 0) > Date.now())) {
-      notify('Доступно лише з 👑 VIP-статусом');
-      return;
-    }
-    if (myId == null) {
-      console.error('Unable to share a Durak reaction without a Telegram user ID.');
-      notify('Не вдалося визначити ваш Telegram ID для реакції.');
-      return;
-    }
-    try {
-      const roomRef = window.FirebaseRoomStore.ref(`rooms/${roomId}`).documentReference();
-      await roomRef.update({
-        lastReaction: {
-          emoji,
-          senderId: String(myId),
-          nonce: Math.random(),
-          ts: Date.now(),
-        },
-      });
-    } catch (error) {
-      console.error('Unable to share a Durak reaction', error);
-      notify('Не вдалося надіслати реакцію.');
-    }
+  function bindReactionControls() {
+    const panel = $('durak-mp-reactions');
+    const output = $('durak-mp-reaction-output');
+    if (!panel || !output || panel.dataset.roomReactionBound) return;
+
+    panel.dataset.roomReactionBound = 'true';
+    panel.addEventListener('click', async (event) => {
+      const button = event.target.closest?.('[data-emoji]');
+      if (!button || !panel.contains(button)) return;
+      const emoji = button.dataset.emoji;
+      if (vipReactions.has(emoji) &&
+          !(Number(window.APP_STATE?.vipUntil || 0) > Date.now())) {
+        notify('Доступно лише з 👑 VIP-статусом');
+        return;
+      }
+
+      const menu = $('durak-mp-reaction-menu');
+      if (menu) menu.hidden = true;
+      $('durak-mp-reaction-toggle')?.setAttribute('aria-expanded', 'false');
+      output.textContent = emoji;
+      output.classList.remove('visible');
+      void output.offsetWidth;
+      output.classList.add('visible');
+      if (reactionTimer) clearTimeout(reactionTimer);
+      reactionTimer = setTimeout(() => {
+        output.textContent = '';
+        output.classList.remove('visible');
+        reactionTimer = null;
+      }, 1600);
+
+      const roomId = state.isOnline ? state.roomCode : '';
+      if (!roomId) return;
+      const currentUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+      if (currentUser?.id == null) {
+        console.error('Unable to share a Durak reaction without a Telegram user ID.');
+        notify('Не вдалося визначити ваш Telegram ID для реакції.');
+        return;
+      }
+      try {
+        const roomRef = window.FirebaseRoomStore.ref(`rooms/${roomId}`).documentReference();
+        await roomRef.update({
+          lastReaction: {
+            emoji,
+            senderId: String(currentUser.id),
+            nonce: Math.random(),
+            ts: Date.now(),
+          },
+        });
+      } catch (error) {
+        console.error('Unable to share a Durak reaction', error);
+        notify('Не вдалося надіслати реакцію.');
+      }
+    });
   }
 
   function enterOnlineGame() {
@@ -1008,7 +1034,10 @@ window.DurakRoom = (() => {
     }
   }
 
-  document.addEventListener('DOMContentLoaded', mountPublicRooms);
+  document.addEventListener('DOMContentLoaded', () => {
+    mountPublicRooms();
+    bindReactionControls();
+  });
 
   return {
     init,
@@ -1018,7 +1047,6 @@ window.DurakRoom = (() => {
     acceptRoomInvite,
     mountPublicRooms,
     startGame,
-    sendReaction,
     getRoomCode: () => state.isOnline ? state.roomCode : '',
   };
 })();

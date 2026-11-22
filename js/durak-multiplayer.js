@@ -4,7 +4,6 @@ window.DurakMultiplayer = (() => {
   const $ = (id) => document.getElementById(id);
   let game = null;
   let botTimer = null;
-  let reactionTimer = null;
   let timerVersion = 0;
   let audioContext = null;
   let audioUnlocked = false;
@@ -236,6 +235,8 @@ window.DurakMultiplayer = (() => {
       })),
       deckCount: game.deck.length,
       trump: { ...game.trump },
+      trumpCard: { ...game.trump },
+      trumpSuit: game.trump?.suit || '',
       tablePairs: game.tablePairs.map((pair) => ({
         attack: { ...pair.attack },
         defend: pair.defend ? { ...pair.defend } : null,
@@ -324,11 +325,13 @@ window.DurakMultiplayer = (() => {
     }));
     const localPlayerIndex = players.findIndex((player) => player.id === localPlayerId);
     if (localPlayerIndex === -1) return false;
+    const trump = snapshotData.trump || snapshotData.trumpCard;
     game = {
       ...snapshotData,
       players,
       deck: Array(Number(snapshotData.deckCount) || 0).fill(null),
-      trump: { ...snapshotData.trump },
+      trump: { ...trump },
+      trumpSuit: snapshotData.trumpSuit || trump?.suit || '',
       tablePairs: (snapshotData.tablePairs || []).map((pair) => ({
         ...pair,
         attack: { ...pair.attack },
@@ -381,8 +384,7 @@ window.DurakMultiplayer = (() => {
 
   function bindReactions() {
     const panel = $('durak-mp-reactions');
-    const output = $('durak-mp-reaction-output');
-    if (!panel || !output || panel.dataset.bound) return;
+    if (!panel || panel.dataset.bound) return;
 
     panel.dataset.bound = 'true';
     panel.addEventListener('click', (event) => {
@@ -393,28 +395,6 @@ window.DurakMultiplayer = (() => {
         toggle.setAttribute('aria-expanded', String(!menu.hidden));
         return;
       }
-
-      const button = event.target.closest?.('[data-emoji]');
-      if (!button || !panel.contains(button)) return;
-      if (button.dataset.vipOnly === 'true' &&
-          !(Number(window.APP_STATE?.vipUntil || 0) > Date.now())) {
-        window.TWA?.toast?.('Доступно лише з 👑 VIP-статусом');
-        return;
-      }
-
-      if (menu) menu.hidden = true;
-      $('durak-mp-reaction-toggle')?.setAttribute('aria-expanded', 'false');
-      output.textContent = button.dataset.emoji;
-      output.classList.remove('visible');
-      void output.offsetWidth;
-      output.classList.add('visible');
-      void window.DurakRoom?.sendReaction?.(button.dataset.emoji);
-      if (reactionTimer) clearTimeout(reactionTimer);
-      reactionTimer = setTimeout(() => {
-        output.textContent = '';
-        output.classList.remove('visible');
-        reactionTimer = null;
-      }, 1600);
     });
 
     const sound = $('durak-mp-sound');
@@ -860,15 +840,37 @@ window.DurakMultiplayer = (() => {
       ownAvatar.dataset.status = localPlayer.status;
       window.renderPlayerAvatar?.(ownAvatar, localPlayer);
     }
-    trump.innerHTML = '';
-    if (game.trump) {
-      const trumpImage = document.createElement('img');
-      trumpImage.src = C.cardFaceImg(game.trump.rank, game.trump.suit, 40);
-      trumpImage.alt = `${C.rankLabel(game.trump.rank)}${C.SUITS[game.trump.suit].sym}`;
-      trump.appendChild(trumpImage);
-      if (trumpSuit) trumpSuit.textContent = C.SUITS[game.trump.suit].sym;
-    } else if (trumpSuit) {
-      trumpSuit.textContent = '';
+    trump.replaceChildren();
+    const stockBack = $('durak-mp-stock-back');
+    if (game.trump?.rank && C.SUITS[game.trump.suit]) {
+      const suit = C.SUITS[game.trump.suit];
+      const hasDeck = game.deck.length > 0;
+      const trumpLabel = `${C.rankLabel(game.trump.rank)} ${suit.sym}`;
+      trump.classList.toggle('empty', !hasDeck);
+      trump.setAttribute('aria-label', `Козир ${trumpLabel}`);
+      if (stockBack) stockBack.hidden = !hasDeck;
+      if (trumpSuit) trumpSuit.textContent = suit.sym;
+      if (hasDeck) {
+        const rank = document.createElement('span');
+        rank.className = 'durak-mp-trump-rank';
+        rank.textContent = C.rankLabel(game.trump.rank);
+        const symbol = document.createElement('span');
+        symbol.className = 'durak-mp-trump-symbol';
+        symbol.textContent = suit.sym;
+        trump.style.setProperty('--trump-suit-color', suit.color);
+        trump.append(rank, symbol);
+      } else {
+        trump.textContent = suit.sym;
+        trump.style.setProperty('--trump-suit-color', suit.color);
+      }
+    } else {
+      trump.classList.add('empty');
+      trump.removeAttribute('aria-label');
+      if (stockBack) stockBack.hidden = true;
+      const suit = C.SUITS[game.trumpSuit];
+      if (trumpSuit) trumpSuit.textContent = suit?.sym || '';
+      trump.textContent = suit?.sym || '';
+      if (suit) trump.style.setProperty('--trump-suit-color', suit.color);
     }
 
     playersEl.innerHTML = '';
@@ -898,7 +900,8 @@ window.DurakMultiplayer = (() => {
 
       const avatar = document.createElement('div');
       avatar.className = 'durak-mp-avatar';
-      avatar.dataset.playerId = player.id;
+      avatar.dataset.playerId = String(player.id);
+      if (player.telegramId) avatar.dataset.telegramId = String(player.telegramId);
       if (window.renderPlayerAvatar) window.renderPlayerAvatar(avatar, player);
       else avatar.textContent = player.name.trim().charAt(0).toUpperCase() || '?';
       if (index === game.attackerIndex || index === game.defenderIndex) avatar.classList.add('active');
@@ -1269,7 +1272,8 @@ window.DurakMultiplayer = (() => {
         hand: (player.hand || []).map((card) => ({ ...card })),
       })),
       deck: (savedState.deck || []).map((card) => card ? { ...card } : null),
-      trump: { ...savedState.trump },
+      trump: { ...(savedState.trump || savedState.trumpCard) },
+      trumpSuit: savedState.trumpSuit || savedState.trump?.suit || savedState.trumpCard?.suit || '',
       tablePairs: (savedState.tablePairs || []).map((pair) => ({
         ...pair,
         attack: { ...pair.attack },

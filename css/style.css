@@ -1878,21 +1878,52 @@ body.durak-game-active .views {
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
 }
 
+.durak-mp-stock-back {
+  z-index: 2;
+}
+
 .durak-mp-trump {
   z-index: 1;
-  top: 15px;
-  left: 13px;
-  width: 38px;
-  height: 54px;
-  overflow: hidden;
-  transform: rotate(90deg) translate(5px, -12px);
+  top: 40px;
+  left: 1px;
+  display: grid;
+  width: 44px;
+  height: 61px;
+  place-items: center;
+  overflow: visible;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  background: #fff;
+  color: var(--trump-suit-color, #18181b);
+  transform: rotate(90deg);
   transform-origin: center;
 }
 
-.durak-mp-trump img {
-  display: block;
-  width: 38px;
-  height: auto;
+.durak-mp-trump-rank {
+  position: absolute;
+  top: 3px;
+  left: 30px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.durak-mp-trump-symbol {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.durak-mp-trump.empty {
+  z-index: 0;
+  top: 0;
+  left: 0;
+  width: 54px;
+  height: 86px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--trump-suit-color, #fff);
+  font-size: 48px;
+  opacity: 0.5;
+  transform: none;
 }
 
 .durak-mp-last-action {
