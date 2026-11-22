@@ -53,11 +53,29 @@ service cloud.firestore {
         profile.get('vipUntil', 0) >= 0;
     }
 
+    function validUpgrades(profile) {
+      let upgrades = profile.get('upgrades', {
+        'diplomat': 0, 'luck': 0, 'rank': 0, 'network': 0
+      });
+      return upgrades is map &&
+        upgrades.keys().hasOnly(['diplomat', 'luck', 'rank', 'network']) &&
+        upgrades.keys().hasAll(['diplomat', 'luck', 'rank', 'network']) &&
+        upgrades.get('diplomat', 0) is int &&
+        upgrades.get('diplomat', 0) >= 0 && upgrades.get('diplomat', 0) <= 10 &&
+        upgrades.get('luck', 0) is int &&
+        upgrades.get('luck', 0) >= 0 && upgrades.get('luck', 0) <= 10 &&
+        upgrades.get('rank', 0) is int &&
+        upgrades.get('rank', 0) >= 0 && upgrades.get('rank', 0) <= 10 &&
+        upgrades.get('network', 0) is int &&
+        upgrades.get('network', 0) >= 0 && upgrades.get('network', 0) <= 10;
+    }
+
     function validUserProfile() {
       let profile = request.resource.data;
       return profile.keys().hasOnly([
           'id', 'name', 'username', 'balance', 'telegramId', 'photoUrl', 'updatedAt',
-          'diamonds', 'lastSalaryAt', 'ownedSkins', 'activeSkin', 'vipUntil', 'banned'
+          'diamonds', 'lastSalaryAt', 'ownedSkins', 'activeSkin', 'vipUntil', 'banned',
+          'upgrades', 'lastNetworkClaim'
         ]) &&
         (profile.get('id', 0) is int || profile.get('id', '') is string) &&
         profile.get('name', '') is string &&
@@ -72,6 +90,9 @@ service cloud.firestore {
         profile.get('banned', false) is bool &&
         profile.get('lastSalaryAt', 0) is int &&
         profile.get('lastSalaryAt', 0) >= 0 &&
+        profile.get('lastNetworkClaim', 0) is int &&
+        profile.get('lastNetworkClaim', 0) >= 0 &&
+        validUpgrades(profile) &&
         validShopProfile(profile);
     }
 

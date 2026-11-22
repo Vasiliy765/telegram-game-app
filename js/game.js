@@ -6,6 +6,32 @@
   const BALANCE_KEY = 'tga_balance';
   const DIAMONDS_API_URL = 'https://telegram-game-app.onrender.com';
   const DEFAULT_CARD_SKIN = 'classic-red';
+  const NETWORK_CLAIM_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+  const DEFAULT_UPGRADES = Object.freeze({
+    diplomat: 0,
+    luck: 0,
+    rank: 0,
+    network: 0,
+  });
+  const UPGRADE_DEFINITIONS = Object.freeze({
+    diplomat: { name: '💼 Дипломат', basePrice: 150, growth: 1.75 },
+    luck: { name: '🍀 Удачливий Жучок', basePrice: 200, growth: 1.75 },
+    rank: { name: '🎖️ Звання Агента', basePrice: 300, growth: 1.85 },
+    network: { name: '📡 Розвідмережа', basePrice: 250, growth: 1.75 },
+  });
+  const RANK_TITLES = [
+    'Стажер',
+    'Оперативник',
+    'Оперативник',
+    'Спецагент',
+    'Спецагент',
+    'Тінь',
+    'Тінь',
+    'Резидент',
+    'Резидент',
+    'Заступник Директора',
+    'Директор Розвідки',
+  ];
   const parseNum = (value) =>
     Number(String(value ?? 0).replace(',', '.').replace(/\s+/g, '')) || 0;
   window.parseNum = parseNum;
@@ -32,6 +58,8 @@
   window.APP_STATE.activeSkin = DEFAULT_CARD_SKIN;
   window.APP_STATE.vipUntil = 0;
   window.APP_STATE.isBanned = false;
+  window.APP_STATE.upgrades = { ...DEFAULT_UPGRADES };
+  window.APP_STATE.lastNetworkClaim = 0;
 
   let roomInviteResolved = false;
   let roomInvite = null;
@@ -227,10 +255,18 @@
       activeSkin: window.APP_STATE.activeSkin || DEFAULT_CARD_SKIN,
       vipUntil: Number(window.APP_STATE.vipUntil) || 0,
       isVip: Number(window.APP_STATE.vipUntil || 0) > Date.now(),
+      upgrades: { ...window.APP_STATE.upgrades },
+      agentRank: window.APP_STATE.upgrades.rank,
     };
   }
 
   window.getCurrentPlayerProfile = getCurrentPlayerProfile;
+  window.getAgentRankTitle = function getAgentRankTitle(level) {
+    const rank = Number.isInteger(Number(level))
+      ? Math.min(10, Math.max(0, Number(level)))
+      : 0;
+    return RANK_TITLES[rank];
+  };
 
   function setAccountBanned(isBanned) {
     window.APP_STATE.isBanned = isBanned;
@@ -331,6 +367,8 @@
       username.hidden = !profile.username;
     }
     if (id) id.textContent = profile.telegramId || '—';
+    const rank = document.getElementById('profile-agent-rank');
+    if (rank) rank.textContent = `🎖️ ${window.getAgentRankTitle(profile.agentRank)}`;
     const vipStatus = document.getElementById('profile-vip-status');
     if (vipStatus) {
       vipStatus.hidden = !profile.isVip;
@@ -342,6 +380,202 @@
     window.renderPlayerAvatar(document.getElementById('header-avatar'), profile);
     const headerVip = document.getElementById('header-vip-badge');
     if (headerVip) headerVip.hidden = !profile.isVip;
+  }
+
+  function normalizeUpgrades(value) {
+    if (value == null) return { ...DEFAULT_UPGRADES };
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('Некоректні дані прокачування у профілі Firestore.');
+    }
+
+    return Object.fromEntries(Object.keys(DEFAULT_UPGRADES).map((key) => {
+      const level = value[key] ?? 0;
+      if (!Number.isInteger(level) || level < 0 || level > 10) {
+        throw new Error(`Некоректний рівень прокачування ${key} у Firestore.`);
+      }
+      return [key, level];
+    }));
+  }
+
+  function normalizeNetworkClaim(value) {
+    if (value == null) return 0;
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error('Некоректний час останнього збору Розвідмережі у Firestore.');
+    }
+    return value;
+  }
+
+  function upgradePrice(key, level) {
+    const definition = UPGRADE_DEFINITIONS[key];
+    return Math.round(definition.basePrice * Math.pow(definition.growth, level));
+  }
+
+  function upgradeBonus(key, level) {
+    if (key === 'diplomat') return `+${level * 10}% до виплати «Зп»`;
+    if (key === 'luck') return `+${formatCurrency(level * 2.5)}% кешбеку за поразку онлайн`;
+    if (key === 'rank') return `Титул «${window.getAgentRankTitle(level)}»`;
+    return `+${level * 30} 🪙 кожні 24 години`;
+  }
+
+  function formatCountdown(milliseconds) {
+    const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
+  function updateNetworkClaimControls() {
+    const button = document.getElementById('agent-network-claim');
+    const status = document.getElementById('agent-network-status');
+    if (!button || !status) return;
+
+    const level = window.APP_STATE.upgrades.network;
+    if (level < 1) {
+      button.hidden = true;
+      button.disabled = true;
+      status.textContent = 'Покращте гілку до рівня 1, щоб відкрити збір.';
+      return;
+    }
+
+    button.hidden = false;
+    const nextClaimAt = window.APP_STATE.lastNetworkClaim + NETWORK_CLAIM_COOLDOWN_MS;
+    const remaining = Math.max(0, nextClaimAt - Date.now());
+    button.disabled = networkClaimPending || remaining > 0;
+    button.textContent = remaining > 0
+      ? `Забрати через ${formatCountdown(remaining)}`
+      : `Забрати +${level * 30} 🪙`;
+    status.textContent = remaining > 0
+      ? `Наступний збір: ${new Date(nextClaimAt).toLocaleString('uk-UA')}`
+      : `Готово: +${level * 30} 🪙 за збір`;
+  }
+
+  function renderAgentUpgrades() {
+    const container = document.getElementById('agent-upgrades');
+    if (!container) return;
+
+    const upgrades = window.APP_STATE.upgrades;
+    container.innerHTML = Object.entries(UPGRADE_DEFINITIONS).map(([key, definition]) => {
+      const level = upgrades[key];
+      const nextBonus = level < 10 ? upgradeBonus(key, level + 1) : 'Максимальний рівень досягнуто.';
+      const action = level < 10
+        ? `<button class="agent-upgrade-button" type="button" data-upgrade-key="${key}">Покращити за ${formatCurrency(upgradePrice(key, level))} 🪙</button>`
+        : '<button class="agent-upgrade-button" type="button" disabled>МАКС. РІВЕНЬ</button>';
+      const networkClaim = key === 'network'
+        ? '<div class="agent-network-claim"><button class="agent-claim-button" id="agent-network-claim" type="button" data-network-claim hidden></button><small id="agent-network-status"></small></div>'
+        : '';
+      return `<article class="agent-upgrade-card" data-upgrade-card="${key}">
+        <header><h3>${definition.name}</h3><span>Рівень ${level}/10</span></header>
+        <div class="agent-upgrade-progress" role="progressbar" aria-valuemin="0" aria-valuemax="10" aria-valuenow="${level}">
+          <span style="width:${level * 10}%"></span>
+        </div>
+        <p><b>Зараз:</b> ${upgradeBonus(key, level)}</p>
+        <p><b>Наступний бонус:</b> ${nextBonus}</p>
+        <div class="agent-upgrade-actions">${action}${networkClaim}</div>
+      </article>`;
+    }).join('');
+    updateNetworkClaimControls();
+  }
+
+  function bindAgentUpgrades() {
+    const container = document.getElementById('agent-upgrades');
+    if (!container || container.dataset.bound) return;
+    container.dataset.bound = 'true';
+    container.addEventListener('click', (event) => {
+      const upgradeButton = event.target.closest?.('[data-upgrade-key]');
+      if (upgradeButton) {
+        void purchaseAgentUpgrade(upgradeButton.dataset.upgradeKey, upgradeButton);
+        return;
+      }
+      const claimButton = event.target.closest?.('[data-network-claim]');
+      if (claimButton) void claimNetworkReward(claimButton);
+    });
+    setInterval(updateNetworkClaimControls, 1000);
+  }
+
+  async function purchaseAgentUpgrade(key, button) {
+    if (!Object.hasOwn(UPGRADE_DEFINITIONS, key) || window.APP_STATE.isBanned) return;
+    button.disabled = true;
+    try {
+      const userRef = await window.getCurrentUserDocumentRef();
+      const result = await window.firebase.firestore().runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(userRef);
+        if (!snapshot.exists) throw new Error('Профіль Firestore не знайдено.');
+        const upgrades = normalizeUpgrades(snapshot.get('upgrades'));
+        const level = upgrades[key];
+        if (level >= 10) throw new Error('Ця гілка вже має максимальний рівень.');
+        const price = upgradePrice(key, level);
+        const balance = parseNum(snapshot.get('balance'));
+        if (!isValidCurrencyBalance(balance)) throw new Error('Некоректний баланс монет у Firestore.');
+        if (balance < price) throw new Error('Недостатньо монет для покращення.');
+
+        const nextUpgrades = { ...upgrades, [key]: level + 1 };
+        const nextBalance = Math.round((balance - price) * 100) / 100;
+        const lastNetworkClaim = normalizeNetworkClaim(snapshot.get('lastNetworkClaim'));
+        transaction.update(userRef, {
+          ...firestoreProfileFields(),
+          balance: nextBalance,
+          upgrades: nextUpgrades,
+          lastNetworkClaim,
+        });
+        return { balance: nextBalance, upgrades: nextUpgrades, lastNetworkClaim };
+      });
+      applyRemoteBalance(result.balance, 'agent-upgrade');
+      applyRemoteUpgrades(result);
+      window.TWA?.toast?.(`✅ Покращено: ${UPGRADE_DEFINITIONS[key].name}`);
+    } catch (error) {
+      console.error('Unable to purchase an Agent Headquarters upgrade.', error);
+      window.TWA?.toast?.(error.message || 'Не вдалося покращити гілку.');
+    } finally {
+      renderAgentUpgrades();
+    }
+  }
+
+  let networkClaimPending = false;
+
+  async function claimNetworkReward(button) {
+    if (networkClaimPending || window.APP_STATE.isBanned) return;
+    networkClaimPending = true;
+    updateNetworkClaimControls();
+    try {
+      const userRef = await window.getCurrentUserDocumentRef();
+      const result = await window.firebase.firestore().runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(userRef);
+        if (!snapshot.exists) throw new Error('Профіль Firestore не знайдено.');
+        const upgrades = normalizeUpgrades(snapshot.get('upgrades'));
+        if (upgrades.network < 1) throw new Error('Спершу покращте гілку «Розвідмережа».');
+        const lastNetworkClaim = normalizeNetworkClaim(snapshot.get('lastNetworkClaim'));
+        const now = Date.now();
+        if (now - lastNetworkClaim < NETWORK_CLAIM_COOLDOWN_MS) {
+          return { claimed: false, lastNetworkClaim };
+        }
+
+        const amount = upgrades.network * 30;
+        const balance = parseNum(snapshot.get('balance'));
+        if (!isValidCurrencyBalance(balance)) throw new Error('Некоректний баланс монет у Firestore.');
+        const nextBalance = Math.round((balance + amount) * 100) / 100;
+        transaction.update(userRef, {
+          ...firestoreProfileFields(),
+          balance: nextBalance,
+          upgrades,
+          lastNetworkClaim: now,
+        });
+        return { claimed: true, balance: nextBalance, upgrades, lastNetworkClaim: now, amount };
+      });
+      if (!result.claimed) {
+        window.APP_STATE.lastNetworkClaim = result.lastNetworkClaim;
+        window.TWA?.toast?.('Збір ще не готовий.');
+        return;
+      }
+      applyRemoteBalance(result.balance, 'agent-network');
+      applyRemoteUpgrades(result);
+      window.TWA?.toast?.(`📡 Отримано +${formatCurrency(result.amount)} 🪙`);
+    } catch (error) {
+      console.error('Unable to collect the Agent Network reward.', error);
+      window.TWA?.toast?.(error.message || 'Не вдалося забрати винагороду.');
+    } finally {
+      networkClaimPending = false;
+      updateNetworkClaimControls();
+    }
   }
 
   function firebaseConfigIsReady() {
@@ -393,13 +627,16 @@
       vipBadge.className = 'vip-name-badge';
       vipBadge.textContent = 'VIP';
       vipBadge.hidden = !isVip;
+      const agentRank = document.createElement('small');
+      agentRank.className = 'agent-rank-title';
+      agentRank.textContent = window.getAgentRankTitle(player.upgrades?.rank);
       const identifier = document.createElement('small');
       identifier.textContent = [
         player.username,
         player.telegramId ? `ID ${player.telegramId}` : '',
       ].filter(Boolean).join(' · ');
       if (player.telegramId) row.dataset.telegramId = String(player.telegramId);
-      details.append(name, vipBadge, identifier);
+      details.append(name, vipBadge, agentRank, identifier);
       const balance = document.createElement('strong');
       balance.className = 'leaderboard-balance';
       balance.textContent = `🪙 ${player.balance}`;
@@ -522,6 +759,8 @@
           ownedSkins: [DEFAULT_CARD_SKIN],
           activeSkin: DEFAULT_CARD_SKIN,
           vipUntil: 0,
+          upgrades: { ...DEFAULT_UPGRADES },
+          lastNetworkClaim: 0,
         });
       } else {
         setAccountBanned(snapshot.get('banned') === true);
@@ -542,6 +781,8 @@
           ? snapshot.get('activeSkin')
           : DEFAULT_CARD_SKIN;
         if (snapshot.get('vipUntil') == null) profileFields.vipUntil = 0;
+        profileFields.upgrades = normalizeUpgrades(snapshot.get('upgrades'));
+        profileFields.lastNetworkClaim = normalizeNetworkClaim(snapshot.get('lastNetworkClaim'));
         transaction.set(userDocumentRef, profileFields, { merge: true });
       }
     });
@@ -633,10 +874,28 @@
     window.APP_STATE.ownedSkins = ownedSkins;
     window.APP_STATE.activeSkin = activeSkin;
     window.APP_STATE.vipUntil = vipUntil;
+    applyRemoteUpgrades(profile);
     window.dispatchEvent(new CustomEvent('usershopprofilechange', {
       detail: { ownedSkins, activeSkin, vipUntil },
     }));
     renderTelegramProfile();
+  }
+
+  function applyRemoteUpgrades(profile) {
+    try {
+      const upgrades = normalizeUpgrades(profile?.upgrades);
+      const lastNetworkClaim = normalizeNetworkClaim(profile?.lastNetworkClaim);
+      window.APP_STATE.upgrades = upgrades;
+      window.APP_STATE.lastNetworkClaim = lastNetworkClaim;
+      window.dispatchEvent(new CustomEvent('userupgradeschange', {
+        detail: { upgrades: { ...upgrades }, lastNetworkClaim },
+      }));
+      renderAgentUpgrades();
+      return true;
+    } catch (error) {
+      console.error('Unable to apply Agent Headquarters data from Firestore.', error);
+      return false;
+    }
   }
 
   window.applyRemoteUserStoreState = function applyRemoteUserStoreState(profile, source = 'firestore') {
@@ -748,20 +1007,22 @@
 
   window.updateUserBalance = function updateUserBalance(delta) {
     if (window.APP_STATE.isBanned) return false;
-    if (!Number.isSafeInteger(delta)) {
-      throw new TypeError('Balance change must be a safe integer.');
+    const roundedDelta = Math.round(Number(delta) * 100) / 100;
+    if (!Number.isFinite(delta) || !Number.isSafeInteger(Math.round(Number(delta) * 100)) ||
+        Math.abs(Number(delta) - roundedDelta) > 1e-8) {
+      throw new TypeError('Balance change must be a safe amount with at most two decimal places.');
     }
 
     const balance = Number(window.APP_STATE?.balance);
-    const nextBalance = balance + delta;
+    const nextBalance = Math.round((balance + roundedDelta) * 100) / 100;
     if (!isValidCurrencyBalance(nextBalance)) return false;
 
     localStorage.setItem(BALANCE_KEY, String(nextBalance));
     window.APP_STATE.balance = nextBalance;
     renderBalance();
-    syncUserBalance(delta);
+    syncUserBalance(roundedDelta);
     window.dispatchEvent(new CustomEvent('userbalancechange', {
-      detail: { balance: nextBalance, delta },
+      detail: { balance: nextBalance, delta: roundedDelta },
     }));
     return true;
   };
@@ -856,7 +1117,7 @@
     return true;
   };
 
-  window.settleUserWager = function settleUserWager(matchId, payout = 0) {
+  window.settleUserWager = function settleUserWager(matchId, payout = 0, { online = false } = {}) {
     if (!matchId || !Number.isSafeInteger(payout) || payout < 0) {
       throw new TypeError('A match id and non-negative integer payout are required.');
     }
@@ -864,16 +1125,25 @@
     const record = JSON.parse(localStorage.getItem(key) || 'null');
     if (!record?.charged) return false;
     if (record.settled) return true;
-    if (payout > 0 && !window.updateUserBalance(payout)) return false;
+    const luckLevel = online ? window.APP_STATE.upgrades.luck : 0;
+    const cashback = payout === 0
+      ? Math.round((Number(record.stake) * luckLevel * 0.025) * 100) / 100
+      : 0;
+    const totalPayout = Math.round((payout + cashback) * 100) / 100;
+    if (totalPayout > 0 && !window.updateUserBalance(totalPayout)) return false;
     record.settled = true;
     record.payout = payout;
+    record.cashback = cashback;
     localStorage.setItem(key, JSON.stringify(record));
+    if (cashback > 0) window.TWA?.toast?.(`🍀 Повернено кешбек ${formatCurrency(cashback)} 🪙`);
     return true;
   };
 
   document.addEventListener('DOMContentLoaded', () => {
     renderBalance();
     renderTelegramProfile();
+    renderAgentUpgrades();
+    bindAgentUpgrades();
     bindDiamondsShop();
     playerDocumentReadyPromise = initializeLeaderboard().catch((error) => {
       console.error('Unable to initialize the Firestore leaderboard.', error);

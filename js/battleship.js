@@ -170,8 +170,14 @@ window.Battleship = (() => {
       telegramId:profile.telegramId,
       username:profile.username,
       photoUrl:profile.photoUrl,
-      vipUntil:Number(profile.vipUntil)||0
+      vipUntil:Number(profile.vipUntil)||0,
+      agentRank:Number(profile.upgrades?.rank)||0
     };
+  }
+  function agentRankMarkup(player){
+    if(!player||player.isBot)return '';
+    const title=window.getAgentRankTitle?.(player.agentRank);
+    return title?`<small class="agent-rank-title">🎖️ ${escapeHtml(title)}</small>`:'';
   }
   function roomLink(){
     return window.createRoomInviteUrl(state.online.roomCode);
@@ -310,9 +316,9 @@ window.Battleship = (() => {
       <div class="bs-lobby-content">
         <div class="bs-lobby-stake">Ставка <b>🪙 ${Number(room.meta?.stake)||state.stake}</b> · Банк <b>🪙 ${Number(room.meta?.bank)||players.length*state.stake}</b></div>
         <div class="bs-lobby-slots">
-          <div class="bs-lobby-player"><span class="bs-lobby-avatar${isHost||hostPlayer?.ready?' ready':''}">${escapeHtml(hostPlayer?.isBot?'🤖':hostPlayer?.avatar||'👑')}</span><strong>${escapeHtml(hostPlayer?.name||room.meta?.hostName||'Господар')}</strong><small>${isHost||hostPlayer?.ready?'✅ Готовий':'Очікує'}</small></div>
+          <div class="bs-lobby-player"><span class="bs-lobby-avatar${isHost||hostPlayer?.ready?' ready':''}">${escapeHtml(hostPlayer?.isBot?'🤖':hostPlayer?.avatar||'👑')}</span><strong>${escapeHtml(hostPlayer?.name||room.meta?.hostName||'Господар')}</strong>${agentRankMarkup(hostPlayer)}<small>${isHost||hostPlayer?.ready?'✅ Готовий':'Очікує'}</small></div>
           <span class="bs-vs">VS</span>
-          <div class="bs-lobby-player${isJoinPending&&joinAvailable?' bs-open-seat':''}" ${isJoinPending&&joinAvailable?'id="bs-open-seat" role="button" tabindex="0"':''}><span class="bs-lobby-avatar${guestPlayer?.ready?' ready':''}">${escapeHtml(guestPlayer?.isBot?'🤖':guestPlayer?.avatar||'＋')}</span><strong>${escapeHtml(guestPlayer?.name||'＋ Вільне місце')}</strong><small>${guestPlayer?.ready?'✅ Готовий':'Очікуємо друга'}</small></div>
+          <div class="bs-lobby-player${isJoinPending&&joinAvailable?' bs-open-seat':''}" ${isJoinPending&&joinAvailable?'id="bs-open-seat" role="button" tabindex="0"':''}><span class="bs-lobby-avatar${guestPlayer?.ready?' ready':''}">${escapeHtml(guestPlayer?.isBot?'🤖':guestPlayer?.avatar||'＋')}</span><strong>${escapeHtml(guestPlayer?.name||'＋ Вільне місце')}</strong>${agentRankMarkup(guestPlayer)}<small>${guestPlayer?.ready?'✅ Готовий':'Очікуємо друга'}</small></div>
         </div>
         <div class="bs-room-code">Код кімнати <strong>${state.online.roomCode}</strong></div>
         ${isHost?'<button class="bs-lobby-action primary" id="bs-invite">Надіслати запрошення в чат</button><button class="bs-lobby-action" id="bs-copy">Скопіювати посилання</button>':''}
@@ -1047,12 +1053,13 @@ window.Battleship = (() => {
       ? Object.values(state.online?.roomData?.players||{}).find(player=>String(player.id)!==String(state.online.uid))
       : null;
     const opponentName=state.mode==='bot'?'Abayazhka':state.mode==='local'?'Гравець 2':enemyPlayer?.name||'Суперник';
+    const ownPlayer=playerIdentity();
     root().innerHTML=`<div class="bs-screen bs-battle">
       <header class="bs-battle-head"><button class="bs-battle-close" id="bs-battle-close">×</button><button class="bs-turn-capsule ${state.turn==='player'?'':'enemy'}" type="button">${state.turn==='player'?'Твій хід':'Хід суперника'} <span id="bs-turn-timer">${state.timerSeconds}s</span></button><button class="bs-sound" id="bs-sound" type="button">${state.sound?'🔊':'♪'}</button></header>
-      <div class="bs-opponent"><span class="bs-heart">♡</span><span class="bs-opponent-avatar" id="bs-opponent-avatar"></span><strong>${escapeHtml(opponentName)}</strong><b>Ворожих кораблів: ${enemyCount}</b></div>
+      <div class="bs-opponent"><span class="bs-heart">♡</span><span class="bs-opponent-avatar" id="bs-opponent-avatar"></span><div class="bs-opponent-name"><strong>${escapeHtml(opponentName)}</strong>${agentRankMarkup(enemyPlayer)}</div><b>Ворожих кораблів: ${enemyCount}</b></div>
       <div class="bs-enemy-board">${boardHtml('enemy')}</div>
       <button class="bs-fire ${state.target!=null?'ready':''}" id="bs-fire" ${state.target==null?'disabled':''} type="button">${state.target==null?'Обери ціль':'Вогонь · '+coord(state.target)}</button>
-      <div class="bs-own-card"><div class="bs-own-identity"><span class="bs-own-avatar" id="bs-own-avatar"></span><b>ТВОЄ ПОЛЕ</b></div><div class="bs-mini-board">${boardHtml('own')}</div><div class="bs-stats"><div><span>Постріли</span><strong>${state.playerStats.shots}</strong></div><div><span>Влучання</span><strong class="red">${state.playerStats.hits}</strong></div><div><span>Точність</span><strong class="cyan">${accuracy}%</strong></div><div><span>Потоплено</span><strong>${state.playerStats.sunk}</strong></div></div></div>
+      <div class="bs-own-card"><div class="bs-own-identity"><span class="bs-own-avatar" id="bs-own-avatar"></span><div class="bs-own-name"><b>${escapeHtml(ownPlayer.name||'Гравець')}</b>${agentRankMarkup(ownPlayer)}<small>ТВОЄ ПОЛЕ</small></div></div><div class="bs-mini-board">${boardHtml('own')}</div><div class="bs-stats"><div><span>Постріли</span><strong>${state.playerStats.shots}</strong></div><div><span>Влучання</span><strong class="red">${state.playerStats.hits}</strong></div><div><span>Точність</span><strong class="cyan">${accuracy}%</strong></div><div><span>Потоплено</span><strong>${state.playerStats.sunk}</strong></div></div></div>
     </div>`;
     window.renderPlayerAvatar?.(document.getElementById('bs-opponent-avatar'),enemyPlayer||{name:opponentName},opponentName[0]||'С');
     window.renderPlayerAvatar?.(document.getElementById('bs-own-avatar'),playerIdentity());
@@ -1072,7 +1079,7 @@ window.Battleship = (() => {
   function finish(win){
     clearInterval(state.interval);state.screen='final';
     const payout=win?state.stake*2:0;
-    if(state.wagerId&&window.settleUserWager)window.settleUserWager(state.wagerId,payout);
+    if(state.wagerId&&window.settleUserWager)window.settleUserWager(state.wagerId,payout,{online:state.mode==='online'});
     state.payout=payout;
     renderFinal(win);
   }

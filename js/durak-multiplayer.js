@@ -120,6 +120,12 @@ window.DurakMultiplayer = (() => {
       badge.textContent = 'VIP';
       element.appendChild(badge);
     }
+    if (!player.isBot) {
+      const rank = document.createElement('small');
+      rank.className = 'agent-rank-title';
+      rank.textContent = window.getAgentRankTitle?.(player.agentRank) || '';
+      element.appendChild(rank);
+    }
   }
 
   function nextActiveIndex(index) {
@@ -225,6 +231,7 @@ window.DurakMultiplayer = (() => {
         photoUrl: player.photoUrl || '',
         activeSkin: player.activeSkin || 'classic-red',
         vipUntil: Number(player.vipUntil) || 0,
+        agentRank: Number(player.agentRank) || 0,
         isBot: player.isBot,
         isOut: player.isOut,
         status: player.status,
@@ -259,6 +266,7 @@ window.DurakMultiplayer = (() => {
       mode: game.mode,
       stake: game.stake,
       matchId: game.matchId,
+      isOnline: game.isOnline,
     };
   }
 
@@ -280,6 +288,7 @@ window.DurakMultiplayer = (() => {
       photoUrl: player.photoUrl || '',
       activeSkin: player.activeSkin || 'classic-red',
       vipUntil: Number(player.vipUntil) || 0,
+      agentRank: Number(player.agentRank) || 0,
       isBot: player.isBot,
       isOut: player.isOut,
       status: player.status,
@@ -317,6 +326,7 @@ window.DurakMultiplayer = (() => {
       photoUrl: player.photoUrl || '',
       activeSkin: player.activeSkin || 'classic-red',
       vipUntil: Number(player.vipUntil) || 0,
+      agentRank: Number(player.agentRank) || 0,
       isBot: Boolean(player.isBot),
       isOut: Boolean(player.isOut),
       status: player.status || '',
@@ -332,6 +342,7 @@ window.DurakMultiplayer = (() => {
       deck: Array(Number(snapshotData.deckCount) || 0).fill(null),
       trump: { ...trump },
       trumpSuit: snapshotData.trumpSuit || trump?.suit || '',
+      isOnline: Boolean(snapshotData.isOnline),
       tablePairs: (snapshotData.tablePairs || []).map((pair) => ({
         ...pair,
         attack: { ...pair.attack },
@@ -459,7 +470,7 @@ window.DurakMultiplayer = (() => {
         : baseShare + (localWinnerIndex < remainder ? 1 : 0)
       : game.stake;
     if (game.matchId && window.settleUserWager) {
-      window.settleUserWager(game.matchId, Math.max(0, localChange));
+      window.settleUserWager(game.matchId, Math.max(0, localChange), { online: game.isOnline });
     }
 
     title.textContent = !loser ? 'Нічия' : localPlayer.id === loser.id ? 'Поразка' : 'Перемога';
@@ -1157,6 +1168,7 @@ window.DurakMultiplayer = (() => {
     mode = 'Простий',
     stake = 10,
     matchId = null,
+    isOnline = false,
     onStateChange,
     isHost = true,
     hostId = null,
@@ -1197,6 +1209,7 @@ window.DurakMultiplayer = (() => {
       photoUrl: player.photoUrl || '',
       activeSkin: player.activeSkin || 'classic-red',
       vipUntil: Number(player.vipUntil) || 0,
+      agentRank: Number(player.agentRank) || 0,
       isBot: Boolean(player.isBot),
       isOut: false,
       status: '',
@@ -1224,6 +1237,7 @@ window.DurakMultiplayer = (() => {
       mode,
       stake: Number(stake),
       matchId: wagerId,
+      isOnline: Boolean(isOnline),
       onStateChange,
       isHost,
       hostId,
@@ -1277,6 +1291,7 @@ window.DurakMultiplayer = (() => {
       deck: (savedState.deck || []).map((card) => card ? { ...card } : null),
       trump: { ...(savedState.trump || savedState.trumpCard) },
       trumpSuit: savedState.trumpSuit || savedState.trump?.suit || savedState.trumpCard?.suit || '',
+      isOnline: Boolean(savedState.isOnline),
       tablePairs: (savedState.tablePairs || []).map((pair) => ({
         ...pair,
         attack: { ...pair.attack },

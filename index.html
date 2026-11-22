@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#0f172a">
   <title>Ігровий центр · Telegram Mini App</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=27">
+  <link rel="stylesheet" href="style.css?v=29">
 </head>
 <body>
   <div id="app">
@@ -412,6 +412,7 @@
           <div class="profile-avatar" id="profile-avatar">Г</div>
           <div class="profile-details">
             <h3 id="profile-name">Гравець</h3>
+            <p class="agent-rank-title" id="profile-agent-rank">🎖️ Стажер</p>
             <p id="profile-username"></p>
             <p>ID: <span id="profile-user-id">—</span></p>
             <p class="profile-vip-status" id="profile-vip-status" hidden></p>
@@ -428,6 +429,16 @@
             </div>
           </div>
         </div>
+        <section class="agent-headquarters" aria-labelledby="agent-headquarters-title">
+          <header class="agent-headquarters-heading">
+            <div>
+              <p>ПРОКАЧУВАННЯ</p>
+              <h3 id="agent-headquarters-title">⚡ Штаб Агента</h3>
+            </div>
+            <span>4 гілки · до 10 рівня</span>
+          </header>
+          <div class="agent-upgrade-grid" id="agent-upgrades" aria-live="polite"></div>
+        </section>
       </section>
     </main>
     <div class="diamonds-shop-overlay" id="diamonds-shop-modal" aria-hidden="true">
@@ -479,19 +490,19 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=27"></script>
-    <script src="js/firestore-room-store.js?v=27"></script>
-    <script src="js/twa.js?v=27"></script>
-    <script src="js/game.js?v=27"></script>
-    <script src="js/router.js?v=27"></script>
-    <script src="js/cards.js?v=27"></script>
-    <script src="js/durak.js?v=27"></script>
-    <script src="js/battleship.js?v=27"></script>
-    <script src="js/tictactoe.js?v=27"></script>
-    <script src="js/store.js?v=27"></script>
-    <script src="js/durak-room.js?v=27"></script>
-    <script src="js/durak-multiplayer.js?v=27"></script>
-    <script src="js/main.js?v=27"></script>
+    <script src="js/firebase-config.js?v=29"></script>
+    <script src="js/firestore-room-store.js?v=29"></script>
+    <script src="js/twa.js?v=29"></script>
+    <script src="js/game.js?v=29"></script>
+    <script src="js/router.js?v=29"></script>
+    <script src="js/cards.js?v=29"></script>
+    <script src="js/durak.js?v=29"></script>
+    <script src="js/battleship.js?v=29"></script>
+    <script src="js/tictactoe.js?v=29"></script>
+    <script src="js/store.js?v=29"></script>
+    <script src="js/durak-room.js?v=29"></script>
+    <script src="js/durak-multiplayer.js?v=29"></script>
+    <script src="js/main.js?v=29"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (window.hasIncomingRoomInvite?.('battleship')) {
@@ -503,7 +514,7 @@
   <div class="account-ban-screen" id="account-ban-screen" hidden role="alert" aria-live="assertive">
     <div class="account-ban-card">⛔ Ваш акаунт заблоковано адміністратором</div>
   </div>
-<script src="js/reactions-sync.js?v=27"></script>
-<script src="js/admin-panel.js?v=27"></script>
+<script src="js/reactions-sync.js?v=29"></script>
+<script src="js/admin-panel.js?v=29"></script>
 </body>
 </html>

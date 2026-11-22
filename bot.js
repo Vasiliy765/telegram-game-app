@@ -36,6 +36,7 @@ const WEBAPP_ORIGIN = new URL(WEBAPP_URL).origin;
 const ADMIN_USER_STATUS_PATH = '/api/admin/user-status';
 const SALARY_COOLDOWN_MS = 3 * 60 * 60 * 1000;
 const VIP_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+const DEFAULT_UPGRADES = Object.freeze({ diplomat: 0, luck: 0, rank: 0, network: 0 });
 const DIAMOND_PACKAGES = Object.freeze({
   '10': { diamonds: 10, stars: 15 },
   '50': { diamonds: 50, stars: 65 },
@@ -139,9 +140,15 @@ async function ensureUser(user) {
         username: user.username || '',
         balance: 100,
         diamonds: 0,
+        upgrades: { ...DEFAULT_UPGRADES },
+        lastNetworkClaim: 0,
       });
-    } else if (snapshot.get('diamonds') == null) {
-      transaction.update(userRef, { diamonds: 0 });
+    } else {
+      const updates = {};
+      if (snapshot.get('diamonds') == null) updates.diamonds = 0;
+      if (snapshot.get('upgrades') == null) updates.upgrades = { ...DEFAULT_UPGRADES };
+      if (snapshot.get('lastNetworkClaim') == null) updates.lastNetworkClaim = 0;
+      if (Object.keys(updates).length) transaction.update(userRef, updates);
     }
   });
 
@@ -371,7 +378,12 @@ async function sendSalary(chatId, user) {
         return { kind: 'cooldown', remainingMs: SALARY_COOLDOWN_MS - (now - lastSalaryAt) };
       }
 
-      const reward = Number(snapshot.get('vipUntil') || 0) > now ? baseReward * 2 : baseReward;
+      const upgrades = snapshot.get('upgrades') || {};
+      const diplomatLevel = Number.isFinite(Number(upgrades.diplomat))
+        ? Math.min(10, Math.max(0, Math.floor(Number(upgrades.diplomat))))
+        : 0;
+      const vipMultiplier = Number(snapshot.get('vipUntil') || 0) > now ? 2 : 1;
+      const reward = Math.round(baseReward * vipMultiplier * (1 + diplomatLevel * 0.1) * 100) / 100;
       const balance = snapshot.get('balance');
       transaction.update(userRef, {
         balance: admin.firestore.FieldValue.increment(reward),
@@ -383,7 +395,10 @@ async function sendSalary(chatId, user) {
       return {
         kind: 'paid',
         reward,
-        balance: (typeof balance === 'number' && Number.isFinite(balance) ? balance : 0) + reward,
+        baseReward,
+        balance: Math.round(
+          ((typeof balance === 'number' && Number.isFinite(balance) ? balance : 0) + reward) * 100,
+        ) / 100,
       };
     }
 
@@ -394,8 +409,10 @@ async function sendSalary(chatId, user) {
       balance: 100 + baseReward,
       diamonds: 0,
       lastSalaryAt: now,
+      upgrades: { ...DEFAULT_UPGRADES },
+      lastNetworkClaim: 0,
     });
-    return { kind: 'paid', reward: baseReward, balance: 100 + baseReward };
+    return { kind: 'paid', reward: baseReward, baseReward, balance: 100 + baseReward };
   });
 
   if (result.kind === 'cooldown') {
@@ -412,7 +429,7 @@ async function sendSalary(chatId, user) {
 
   const reward = result.reward;
   const rewardText = `<b>${reward} 🪙</b>`;
-  const bonusText = reward >= 10 ? '✨ <b>Рідкісний бонус!</b>\n' : '';
+  const bonusText = result.baseReward >= 10 ? '✨ <b>Рідкісний бонус!</b>\n' : '';
   await sendMessage(
     chatId,
     `💰 <b>Зарплату нараховано!</b>\n${bonusText}`
@@ -557,6 +574,8 @@ async function grantDiamonds(userId, amount, user = null) {
       username: user?.username || '',
       balance: 100,
       diamonds: admin.firestore.FieldValue.increment(amount),
+      upgrades: { ...DEFAULT_UPGRADES },
+      lastNetworkClaim: 0,
     });
   });
 }
@@ -653,6 +672,8 @@ async function processSuccessfulDiamondPayment(message) {
           username: user.username || '',
           balance: 100,
           diamonds: admin.firestore.FieldValue.increment(packageDetails.diamonds),
+          upgrades: { ...DEFAULT_UPGRADES },
+          lastNetworkClaim: 0,
         });
       }
       transaction.update(purchaseRef, {

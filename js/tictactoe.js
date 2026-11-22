@@ -56,8 +56,16 @@ window.TicTacToe = (() => {
     return false;
   }
 
-  function settleWager(matchId, payout) {
-    if (matchId && window.settleUserWager) window.settleUserWager(matchId, payout);
+  function settleWager(matchId, payout, online = false) {
+    if (matchId && window.settleUserWager) {
+      window.settleUserWager(matchId, payout, { online });
+    }
+  }
+
+  function agentRankMarkup(player) {
+    if (!player || player.isBot) return '';
+    const title = window.getAgentRankTitle?.(player.agentRank ?? player.upgrades?.rank);
+    return title ? `<small class="agent-rank-title">🎖️ ${escapeHtml(title)}</small>` : '';
   }
 
   function shell(content) {
@@ -167,6 +175,7 @@ window.TicTacToe = (() => {
       photoUrl: profile.photoUrl,
       name: profile.name,
       vipUntil: Number(profile.vipUntil) || 0,
+      agentRank: Number(profile.upgrades?.rank) || 0,
       avatar: (profile.name || 'Г').charAt(0).toUpperCase(),
       symbol: 'X',
       ready: true,
@@ -292,9 +301,9 @@ window.TicTacToe = (() => {
           <h1 class="ttt-title">Онлайн 1 на 1</h1>
           <p class="ttt-subtitle">Ставка 🪙 ${Number(room.meta?.stake) || state.stake} · Банк 🪙 ${Number(room.meta?.bank) || (players.length * state.stake)}</p>
           <div class="ttt-lobby-players">
-            <div class="ttt-player-card"><span class="ttt-avatar${isHost || hostPlayer?.ready ? ' ready' : ''}">${escapeHtml(hostPlayer?.isBot ? '🤖' : hostPlayer?.name?.[0] || '👑')}</span><b>${escapeHtml(hostPlayer?.name || room.meta?.hostName || 'Господар')} · ✕</b><small>${isHost || hostPlayer?.ready ? '✅ Готовий' : 'Очікує'}</small></div>
+            <div class="ttt-player-card"><span class="ttt-avatar${isHost || hostPlayer?.ready ? ' ready' : ''}">${escapeHtml(hostPlayer?.isBot ? '🤖' : hostPlayer?.name?.[0] || '👑')}</span><b>${escapeHtml(hostPlayer?.name || room.meta?.hostName || 'Господар')} · ✕</b>${agentRankMarkup(hostPlayer)}<small>${isHost || hostPlayer?.ready ? '✅ Готовий' : 'Очікує'}</small></div>
             <span>VS</span>
-            <div class="ttt-player-card${isJoinPending && joinAvailable ? ' ttt-open-seat' : ''}" ${isJoinPending && joinAvailable ? 'data-action="join-seat" role="button" tabindex="0"' : ''}><span class="ttt-avatar${guestPlayer?.ready ? ' ready' : ''}">${escapeHtml(guestPlayer?.isBot ? '🤖' : guestPlayer?.name?.[0] || '+')}</span><b>${escapeHtml(guestPlayer?.name || '＋ Вільне місце')} · ○</b><small>${guestPlayer?.ready ? '✅ Готовий' : 'Очікуємо друга'}</small></div>
+            <div class="ttt-player-card${isJoinPending && joinAvailable ? ' ttt-open-seat' : ''}" ${isJoinPending && joinAvailable ? 'data-action="join-seat" role="button" tabindex="0"' : ''}><span class="ttt-avatar${guestPlayer?.ready ? ' ready' : ''}">${escapeHtml(guestPlayer?.isBot ? '🤖' : guestPlayer?.name?.[0] || '+')}</span><b>${escapeHtml(guestPlayer?.name || '＋ Вільне місце')} · ○</b>${agentRankMarkup(guestPlayer)}<small>${guestPlayer?.ready ? '✅ Готовий' : 'Очікуємо друга'}</small></div>
           </div>
           <div class="ttt-lobby-hint">${isJoinPending ? 'Кімната відкрита. Приєднайтеся, щоб зайняти місце.' : !isHost ? 'Очікування початку гри...' : `Код кімнати: <b>${escapeHtml(state.online.roomCode)}</b><br>${notice}<br>Готові: ${players.filter((player) => String(player.id) === String(room.meta?.hostId) || player.ready || player.isBot).length}/2`}</div>
           ${isHost ? '<button class="ttt-lobby-action" type="button" data-action="invite">Надіслати запрошення в чат</button><button class="ttt-lobby-action" type="button" data-action="copy">Скопіювати посилання</button>' : ''}
@@ -338,6 +347,7 @@ window.TicTacToe = (() => {
       photoUrl: profile.photoUrl || '',
       name: profile.name || 'Гравець',
       vipUntil: Number(profile.vipUntil) || 0,
+      agentRank: Number(profile.upgrades?.rank) || 0,
       avatar: (profile.name || 'Г').charAt(0).toUpperCase(),
       symbol: 'O',
       ready: false,
@@ -725,6 +735,8 @@ window.TicTacToe = (() => {
       ? Object.values(state.online?.roomData?.players || {}).find((player) => String(player.id) !== String(state.online.uid))
       : null;
     const localProfile = window.getCurrentPlayerProfile?.();
+    const firstPlayer = online ? me : localProfile;
+    const secondPlayer = online ? opponent : null;
     const firstName = online ? me?.name || 'Ти' : localProfile?.name || (state.mode === 'local' ? 'Гравець 1' : 'Ти');
     const secondName = online ? opponent?.name || 'Суперник' : state.mode === 'local' ? 'Гравець 2' : state.mode === 'test' ? 'ШІ-бот' : 'Розумний бот';
     const currentName = turnSymbol === 'X' ? firstName : secondName;
@@ -736,9 +748,9 @@ window.TicTacToe = (() => {
       <main class="ttt-game-screen">
         <span class="ttt-turn-capsule" id="ttt-turn-label">${localTurn ? 'Твій хід' : `Хід ${currentName}`} <span id="ttt-timer">${state.seconds || 15}s</span></span>
         <div class="ttt-players">
-          <div class="ttt-player-card${turnSymbol === 'X' ? ' active' : ''}"><span class="ttt-avatar">${escapeHtml(firstName[0] || 'X')}</span><b>${escapeHtml(firstName)}</b><span class="ttt-mark">✕</span></div>
+          <div class="ttt-player-card${turnSymbol === 'X' ? ' active' : ''}"><span class="ttt-avatar">${escapeHtml(firstName[0] || 'X')}</span><b>${escapeHtml(firstName)}</b>${agentRankMarkup(firstPlayer)}<span class="ttt-mark">✕</span></div>
           <span>VS</span>
-          <div class="ttt-player-card${turnSymbol === 'O' ? ' active' : ''}"><span class="ttt-avatar">${escapeHtml(secondName[0] || 'O')}</span><b>${escapeHtml(secondName)}</b><span class="ttt-mark">○</span></div>
+          <div class="ttt-player-card${turnSymbol === 'O' ? ' active' : ''}"><span class="ttt-avatar">${escapeHtml(secondName[0] || 'O')}</span><b>${escapeHtml(secondName)}</b>${agentRankMarkup(secondPlayer)}<span class="ttt-mark">○</span></div>
         </div>
         <div class="ttt-board"${state.winLine == null ? '' : ` data-line="${state.winLine}"`}>${cells}</div>
         <p class="ttt-subtitle">${localTurn ? `Твій символ · ${state.symbol || '✕'}` : 'Дочекайся ходу суперника'}</p>
@@ -793,7 +805,7 @@ window.TicTacToe = (() => {
     state.winnerSymbol = winner;
     const won = winner !== 'draw' && (state.mode === 'local' || winner === state.symbol);
     const payout = winner === 'draw' ? state.stake : won ? state.stake * 2 : 0;
-    settleWager(state.matchId, payout);
+    settleWager(state.matchId, payout, state.mode === 'online');
     state.payout = payout;
     state.won = won;
     renderFinal(winner);

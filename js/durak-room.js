@@ -360,6 +360,7 @@ window.DurakRoom = (() => {
       photoUrl: profile.photoUrl || '',
       activeSkin: profile.activeSkin || 'classic-red',
       vipUntil: Number(profile.vipUntil) || 0,
+      agentRank: Number(profile.upgrades?.rank) || 0,
     };
   }
 
@@ -379,6 +380,7 @@ window.DurakRoom = (() => {
             photoUrl: slot.photoUrl,
             activeSkin: ownProfile.activeSkin || slot.activeSkin || 'classic-red',
             vipUntil: Number(ownProfile.vipUntil ?? slot.vipUntil) || 0,
+            agentRank: Number(ownProfile.upgrades?.rank ?? slot.agentRank) || 0,
           };
         }),
       localPlayerId: state.myId,
@@ -386,6 +388,7 @@ window.DurakRoom = (() => {
       mode: state.settings.mode,
       stake: state.settings.stake,
       matchId: `${state.roomCode}-${Date.now()}`,
+      isOnline: state.isOnline,
     };
   }
 
@@ -1001,6 +1004,19 @@ window.DurakRoom = (() => {
     void roomReference(`seats/${position}`).update({ activeSkin, vipUntil }).catch((error) => {
       console.error('Unable to synchronize the player shop profile to the Durak room.', error);
       notify('Не вдалося оновити скін або VIP за ігровим столом.');
+    });
+
+    window.addEventListener('userupgradeschange', (event) => {
+      if (!state.isOnline || !state.roomCode) return;
+      const position = ownPosition();
+      const ownSlot = state.slots.find((slot) => slot.id === state.myId);
+      if (!Number.isInteger(position) || !ownSlot) return;
+      const agentRank = Number(event.detail?.upgrades?.rank) || 0;
+      if (Number(ownSlot.agentRank) === agentRank) return;
+      void roomReference(`seats/${position}`).update({ agentRank }).catch((error) => {
+        console.error('Unable to synchronize the player rank to the Durak room.', error);
+        notify('Не вдалося оновити звання за ігровим столом.');
+      });
     });
   });
 

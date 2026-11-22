@@ -1,4 +1,4 @@
-@import url("css/style.css?v=27");
+@import url("css/style.css?v=29");
 
 html,
 body {
@@ -1323,6 +1323,20 @@ body.tictactoe-active #view-tictactoe.active {
   font-weight: 800;
 }
 
+.bs-opponent-name,
+.bs-own-name {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.bs-opponent-name .agent-rank-title,
+.bs-own-name .agent-rank-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .bs-own-identity {
   display: flex;
   min-width: 0;
@@ -1334,6 +1348,12 @@ body.tictactoe-active #view-tictactoe.active {
 .bs-own-identity b {
   color: #d9d9df;
   font-size: 12px;
+}
+
+.bs-own-name > small:last-child {
+  color: #777984;
+  font-size: 8px;
+  font-weight: 700;
 }
 
 .bs-own-avatar {
@@ -1438,6 +1458,155 @@ body.tictactoe-active #view-tictactoe.active {
   gap: 8px;
   border-color: rgba(167, 139, 250, 0.35);
   background: #211d2b;
+}
+
+.agent-rank-title {
+  color: #e7c56e !important;
+  font-size: 10px !important;
+  font-weight: 700;
+}
+
+.profile-details .agent-rank-title {
+  font-size: 12px !important;
+}
+
+.agent-headquarters {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0 24px;
+  padding: 14px;
+  border: 1px solid rgba(234, 193, 91, 0.28);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(53, 43, 26, 0.7), rgba(29, 28, 31, 0.96));
+}
+
+.agent-headquarters-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agent-headquarters-heading p {
+  margin: 0 0 4px;
+  color: #c49a48;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+}
+
+.agent-headquarters-heading h3 {
+  margin: 0;
+  color: #fff2ce;
+  font-size: 17px;
+}
+
+.agent-headquarters-heading > span {
+  color: #b7a982;
+  font-size: 10px;
+  text-align: right;
+}
+
+.agent-upgrade-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.agent-upgrade-card {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(16, 17, 20, 0.78);
+}
+
+.agent-upgrade-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agent-upgrade-card h3 {
+  margin: 0;
+  color: #f5e9c8;
+  font-size: 13px;
+}
+
+.agent-upgrade-card > header > span {
+  flex: 0 0 auto;
+  color: #e7c56e;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.agent-upgrade-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #343239;
+}
+
+.agent-upgrade-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #a87927, #f3d16f);
+  transition: width 180ms ease;
+}
+
+.agent-upgrade-card > p {
+  margin: 0;
+  color: #b7b3a8;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.agent-upgrade-card > p b {
+  color: #eee1bd;
+}
+
+.agent-upgrade-actions,
+.agent-network-claim {
+  display: grid;
+  gap: 7px;
+}
+
+.agent-upgrade-button,
+.agent-claim-button {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(226, 185, 87, 0.38);
+  border-radius: 10px;
+  background: linear-gradient(135deg, #6e5123, #453317);
+  color: #fff1c8;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.agent-claim-button {
+  border-color: rgba(63, 180, 145, 0.4);
+  background: linear-gradient(135deg, #1d644f, #174538);
+  color: #d7fff1;
+}
+
+.agent-upgrade-button:disabled,
+.agent-claim-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.agent-network-claim > small {
+  color: #a7b9b1;
+  font-size: 10px;
+  text-align: center;
+}
+
+[data-network-claim][hidden] {
+  display: none;
 }
 
 .profile-diamonds-balance {
