@@ -28,7 +28,7 @@ window.DurakRoom = (() => {
     leaving: false,
     startingGame: false,
     isMovePending: false,
-    lastReactionId: null,
+    lastShownReactionTs: null,
   };
 
   function randomBotName() {
@@ -100,7 +100,7 @@ window.DurakRoom = (() => {
     state.enteredGame = false;
     state.leaving = false;
     state.isMovePending = false;
-    state.lastReactionId = null;
+    state.lastShownReactionTs = null;
   }
 
   function listen(reference, event, callback) {
@@ -114,6 +114,25 @@ window.DurakRoom = (() => {
 
   function roomReference(path = '') {
     return state.db.ref(`rooms/${state.roomCode}${path ? `/${path}` : ''}`);
+  }
+
+  function roomDocumentReference() {
+    return window.firebase.firestore().collection('durakRooms').doc(state.roomCode);
+  }
+
+  function actionFieldPath(playerId, actionId) {
+    return new window.firebase.firestore.FieldPath('actions', playerId, actionId);
+  }
+
+  async function updateAction(playerId, actionId, action) {
+    await roomDocumentReference().update(actionFieldPath(playerId, actionId), action);
+  }
+
+  async function removeAction(playerId, actionId) {
+    await roomDocumentReference().update(
+      actionFieldPath(playerId, actionId),
+      window.firebase.firestore.FieldValue.delete(),
+    );
   }
 
   function renderSlots() {
@@ -368,24 +387,25 @@ window.DurakRoom = (() => {
     if (!publicGame || !hostState) return;
 
     try {
-      const updates = [
-        roomReference('game/public').set(publicGame),
-        roomReference('game/hostState').set(hostState),
-      ];
+      const hands = {};
       hostState.players.forEach((player) => {
         if (!player.isBot) {
-          updates.push(roomReference(`game/hands/${player.id}`).set(player.hand));
+          hands[player.id] = player.hand;
         }
       });
-      await Promise.all(updates);
-      if (publicGame.gameOver && state.roomStatus === 'started') {
-        await roomReference('meta/status').set('finished');
+      const updates = {
+        game: { public: publicGame, hostState, hands },
+      };
+      if (publicGame.gameOver && state.roomStatus === 'playing') {
+        updates['meta.status'] = 'finished';
+      }
+      await roomDocumentReference().update(updates);
+      if (updates['meta.status'] === 'finished') {
         state.roomStatus = 'finished';
       }
       return true;
     } catch (error) {
       console.error('Unable to synchronize the Durak game', error);
-      notify('Не вдалося синхронізувати гру. Перевірте правила Firebase та з’єднання.');
       return false;
     }
   }
@@ -395,6 +415,8 @@ window.DurakRoom = (() => {
     state.isMovePending = true;
     window.DurakMultiplayer.setMovePending(true);
     const reference = roomReference(`actions/${state.myId}`).push();
+    const playerId = String(state.myId);
+    const actionId = String(reference.key);
     let acknowledgementListener;
     let timeout;
     try {
@@ -406,13 +428,11 @@ window.DurakRoom = (() => {
         };
         reference.on('value', acknowledgementListener, reject);
       });
-      await reference.set({ ...action, createdAt: Date.now() });
+      await updateAction(playerId, actionId, { ...action, createdAt: Date.now() });
       const accepted = await acknowledgement;
-      if (!accepted) notify('Стан гри вже змінився. Спробуй ще раз.');
       return accepted;
     } catch (error) {
       console.error('Unable to send the Durak action', error);
-      notify('Не вдалося підтвердити хід. Перевірте з’єднання.');
       return false;
     } finally {
       clearTimeout(timeout);
@@ -420,7 +440,7 @@ window.DurakRoom = (() => {
       state.isMovePending = false;
       window.DurakMultiplayer.setMovePending(false);
       try {
-        await reference.remove();
+        await removeAction(playerId, actionId);
       } catch (error) {
         console.error('Unable to remove the processed Durak action', error);
       }
@@ -433,16 +453,18 @@ window.DurakRoom = (() => {
     const callback = async (snapshot) => {
       const action = snapshot.val();
       if (!action) return;
+      const playerId = String(snapshot.ref.parent.key);
+      const actionId = String(snapshot.key);
       try {
         const accepted = await window.DurakMultiplayer.dispatchAction({
           ...action,
-          playerId: snapshot.ref.parent.key,
+          playerId,
         });
-        await snapshot.ref.update({ processed: true, accepted });
+        await updateAction(playerId, actionId, { ...action, processed: true, accepted });
       } catch (error) {
         console.error('Unable to process a Durak action', error);
         try {
-          await snapshot.ref.update({ processed: true, accepted: false });
+          await updateAction(playerId, actionId, { ...action, processed: true, accepted: false });
         } catch (acknowledgementError) {
           console.error('Unable to acknowledge the Durak action', acknowledgementError);
         }
@@ -458,11 +480,12 @@ window.DurakRoom = (() => {
   async function sendReaction(emoji) {
     if (!state.isOnline || !state.roomCode || typeof emoji !== 'string') return;
     try {
-      await roomReference('lastReaction').set({
-        emoji,
-        senderId: state.myId,
-        senderName: playerName(),
-        id: Date.now(),
+      await roomDocumentReference().update({
+        reaction: {
+          emoji,
+          senderId: String(state.myId),
+          ts: Date.now(),
+        },
       });
     } catch (error) {
       console.error('Unable to share a Durak reaction', error);
@@ -471,13 +494,16 @@ window.DurakRoom = (() => {
   }
 
   function listenToReactions() {
-    listen(roomReference('lastReaction'), 'value', (snapshot) => {
-      const reaction = snapshot.val();
-      const reactionId = Number(reaction?.id);
-      if (!Number.isFinite(reactionId) || reactionId === state.lastReactionId) return;
-      state.lastReactionId = reactionId;
-      if (Date.now() - reactionId > 5000 || Date.now() < reactionId) return;
-      window.DurakMultiplayer.showReaction(reaction.senderId, reaction.emoji);
+    listen(roomReference(), 'value', (snapshot) => {
+      const roomData = snapshot.val();
+      const reaction = roomData?.reaction;
+      const reactionTs = Number(reaction?.ts);
+      if (!Number.isFinite(reactionTs) || reactionTs === state.lastShownReactionTs ||
+          typeof reaction?.emoji !== 'string' || reaction.senderId == null) return;
+      const age = Date.now() - reactionTs;
+      if (age < 0 || age >= 5000) return;
+      state.lastShownReactionTs = reactionTs;
+      window.DurakMultiplayer.showReaction(String(reaction.senderId), reaction.emoji);
     });
   }
 

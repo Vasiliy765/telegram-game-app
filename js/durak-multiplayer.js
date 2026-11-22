@@ -1096,7 +1096,8 @@ window.DurakMultiplayer = (() => {
     if (!target) return;
     target.querySelector('.durak-mp-reaction-bubble')?.remove();
     const bubble = document.createElement('span');
-    bubble.className = 'durak-mp-reaction-bubble';
+    const isSelf = String(senderId) === String(game.localPlayerId);
+    bubble.className = `durak-mp-reaction-bubble${isSelf ? ' own' : ''}`;
     bubble.textContent = emoji;
     target.appendChild(bubble);
     setTimeout(() => bubble.remove(), 1800);

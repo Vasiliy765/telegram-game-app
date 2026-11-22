@@ -1736,6 +1736,18 @@ body.durak-game-active .views {
   100% { opacity: 0; transform: translate(-50%, -34px) scale(0.9); }
 }
 
+.durak-mp-reaction-bubble.own {
+  top: calc(100% - 2px);
+  animation-name: durak-seat-reaction-own;
+}
+
+@keyframes durak-seat-reaction-own {
+  0% { opacity: 0; transform: translate(-50%, -10px) scale(0.7); }
+  15% { opacity: 1; transform: translate(-50%, 0) scale(1.15); }
+  75% { opacity: 1; transform: translate(-50%, 12px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, 22px) scale(0.9); }
+}
+
 .durak-mp-player-info {
   position: absolute;
   z-index: 2;
