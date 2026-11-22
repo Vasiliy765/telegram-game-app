@@ -2,6 +2,7 @@ window.DurakRoom = (() => {
   const tg = window.Telegram?.WebApp || {};
   const $ = (id) => document.getElementById(id);
   const defaultSettings = { mode: 'Простий', deck: 36, players: 4, roomType: 'Закрита', stake: 10 };
+  const vipReactions = new Set(['😈', '🤓', '🖕', '🤘']);
   const adjectives = ['Сміливий', 'Тихий', 'Веселий', 'Миткий'];
   const nouns = ['Лис', 'Ведмідь', 'Вовк', 'Орел'];
   let publicRoomsUnmount = null;
@@ -169,7 +170,7 @@ window.DurakRoom = (() => {
         : slot.joined
           ? slot.name || 'Гравець'
           : 'Вільне місце';
-      label.textContent = Number(slot.vipUntil) > Date.now()
+      label.textContent = Number(slot.vipUntil || 0) > Date.now()
         ? `👑 ${playerLabel}`
         : playerLabel;
       element.append(avatar, label);
@@ -492,18 +493,25 @@ window.DurakRoom = (() => {
   }
 
   async function sendReaction(emoji) {
-    const myTgId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
-    if (!state.isOnline || !state.roomCode || typeof emoji !== 'string') return;
-    if (myTgId == null) {
+    const roomId = state.isOnline ? state.roomCode : '';
+    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+    const myId = tgUser?.id;
+    if (!roomId || typeof emoji !== 'string') return;
+    if (vipReactions.has(emoji) && !(Number(window.APP_STATE?.vipUntil || 0) > Date.now())) {
+      notify('Доступно лише з 👑 VIP-статусом');
+      return;
+    }
+    if (myId == null) {
       console.error('Unable to share a Durak reaction without a Telegram user ID.');
       notify('Не вдалося визначити ваш Telegram ID для реакції.');
       return;
     }
     try {
-      await roomDocumentReference().update({
+      const roomRef = window.FirebaseRoomStore.ref(`rooms/${roomId}`).documentReference();
+      await roomRef.update({
         lastReaction: {
           emoji,
-          senderId: String(myTgId),
+          senderId: String(myId),
           nonce: Math.random(),
           ts: Date.now(),
         },
@@ -662,6 +670,10 @@ window.DurakRoom = (() => {
   }
 
   async function init(settings = {}, isHost = true) {
+    if (window.isAccountBanned?.()) {
+      notify('⛔ Ваш акаунт заблоковано адміністратором');
+      return false;
+    }
     resetRoom();
     state.settings = {
       ...defaultSettings,
@@ -744,6 +756,10 @@ window.DurakRoom = (() => {
   }
 
   async function joinRoom(roomCode) {
+    if (window.isAccountBanned?.()) {
+      notify('⛔ Ваш акаунт заблоковано адміністратором');
+      return false;
+    }
     resetRoom();
     try {
       const backend = await connectFirebase();
@@ -797,6 +813,10 @@ window.DurakRoom = (() => {
   }
 
   async function acceptRoomInvite() {
+    if (window.isAccountBanned?.()) {
+      notify('⛔ Ваш акаунт заблоковано адміністратором');
+      return false;
+    }
     if (!state.isOnline || !state.joinPending || state.roomStarted) return;
     const profile = window.getCurrentPlayerProfile?.() || {};
     const candidate = {

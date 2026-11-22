@@ -5,6 +5,7 @@ const viewsEl = document.getElementById('views');
 window.onViewShow = window.onViewShow || {};
 
 function showView(id) {
+  if (window.APP_STATE?.isBanned) return false;
   document.body.classList.toggle('durak-game-active', id === 'durak-table');
   document.body.classList.toggle('tictactoe-active', id === 'tictactoe');
   if (id !== 'battleship') {

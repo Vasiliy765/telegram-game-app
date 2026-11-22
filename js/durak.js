@@ -258,6 +258,7 @@ window.Durak = (() => {
     const tableEl = $('#durak-table');
     tableEl.innerHTML = '';
     state.table.forEach((r) => {
+      if (!r?.a) return;
       const div = document.createElement('div');
       div.className = 'table-row';
       div.innerHTML = `
@@ -269,6 +270,7 @@ window.Durak = (() => {
     });
     const ranks = ranksOnTable();
     $('#durak-player-hand').innerHTML = state.player.map((card, idx) => {
+      if (!card) return '';
       let enabled = true;
       if (state.phase === 'defend_player') {
         const row = lastOpenRow();

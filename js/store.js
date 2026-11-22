@@ -75,8 +75,6 @@ window.Store = (() => {
     }
     renderSkins();
     renderVip();
-    window.Durak?.render?.();
-    window.DurakMultiplayer?.render?.();
   }
 
   async function exchangeDiamonds(diamondAmount) {
@@ -296,7 +294,7 @@ window.Store = (() => {
     const status = $('store-vip-status');
     const button = $('store-vip-buy');
     if (!button) return;
-    const isVip = state.vipUntil > Date.now();
+    const isVip = Number(state.vipUntil || 0) > Date.now();
     button.disabled = busy;
     button.textContent = isVip ? 'Продовжити · 40 💎' : '40 💎';
     if (status) {

@@ -109,7 +109,18 @@ window.DurakMultiplayer = (() => {
 
   function displayPlayerName(player) {
     const name = player.name || 'Гравець';
-    return Number(player.vipUntil) > Date.now() ? `👑 ${name}` : name;
+    return Number(player.vipUntil || 0) > Date.now() ? `👑 ${name}` : name;
+  }
+
+  function appendPlayerName(element, player) {
+    const isVip = Number(player.vipUntil || 0) > Date.now();
+    element.append(document.createTextNode(`${isVip ? '👑 ' : ''}${player.name || 'Гравець'}`));
+    if (isVip) {
+      const badge = document.createElement('span');
+      badge.className = 'vip-name-badge';
+      badge.textContent = 'VIP';
+      element.appendChild(badge);
+    }
   }
 
   function nextActiveIndex(index) {
@@ -385,6 +396,11 @@ window.DurakMultiplayer = (() => {
 
       const button = event.target.closest?.('[data-emoji]');
       if (!button || !panel.contains(button)) return;
+      if (button.dataset.vipOnly === 'true' &&
+          !(Number(window.APP_STATE?.vipUntil || 0) > Date.now())) {
+        window.TWA?.toast?.('Доступно лише з 👑 VIP-статусом');
+        return;
+      }
 
       if (menu) menu.hidden = true;
       $('durak-mp-reaction-toggle')?.setAttribute('aria-expanded', 'false');
@@ -419,6 +435,7 @@ window.DurakMultiplayer = (() => {
   }
 
   function createCardFace(card) {
+    if (!card) return null;
     const face = document.createElement('span');
     const isRed = C.SUITS[card.suit].color === '#dc2626';
     face.className = `durak-mp-face ${isRed ? 'red' : 'black'}`;
@@ -500,7 +517,7 @@ window.DurakMultiplayer = (() => {
       details.className = 'durak-result-details';
       const name = document.createElement('span');
       name.className = 'durak-result-name';
-      name.textContent = displayPlayerName(player);
+      appendPlayerName(name, player);
       const description = document.createElement('span');
       description.className = 'durak-result-description';
       description.textContent = player.id === loser?.id ? 'дурень' : 'переможець';
@@ -844,11 +861,15 @@ window.DurakMultiplayer = (() => {
       window.renderPlayerAvatar?.(ownAvatar, localPlayer);
     }
     trump.innerHTML = '';
-    const trumpImage = document.createElement('img');
-    trumpImage.src = C.cardFaceImg(game.trump.rank, game.trump.suit, 40);
-    trumpImage.alt = `${C.rankLabel(game.trump.rank)}${C.SUITS[game.trump.suit].sym}`;
-    trump.appendChild(trumpImage);
-    if (trumpSuit) trumpSuit.textContent = C.SUITS[game.trump.suit].sym;
+    if (game.trump) {
+      const trumpImage = document.createElement('img');
+      trumpImage.src = C.cardFaceImg(game.trump.rank, game.trump.suit, 40);
+      trumpImage.alt = `${C.rankLabel(game.trump.rank)}${C.SUITS[game.trump.suit].sym}`;
+      trump.appendChild(trumpImage);
+      if (trumpSuit) trumpSuit.textContent = C.SUITS[game.trump.suit].sym;
+    } else if (trumpSuit) {
+      trumpSuit.textContent = '';
+    }
 
     playersEl.innerHTML = '';
     const handCount = (player) => player.hand.length || player.cardCount || 0;
@@ -887,7 +908,8 @@ window.DurakMultiplayer = (() => {
       const role = document.createElement('span');
       role.className = 'durak-mp-role';
       role.textContent = index === game.attackerIndex ? '⚔' : index === game.defenderIndex ? '🛡' : '';
-      name.append(role, document.createTextNode(displayPlayerName(player)));
+      name.appendChild(role);
+      appendPlayerName(name, player);
 
       const info = document.createElement('div');
       info.className = 'durak-mp-player-info';
@@ -918,6 +940,7 @@ window.DurakMultiplayer = (() => {
       const pairEl = document.createElement('div');
       pairEl.className = 'durak-mp-pair';
       const makePlayedCard = (played, playerIndex, cardRole) => {
+        if (!played) return null;
         const wrapper = document.createElement('div');
         wrapper.className = `durak-mp-played-card ${cardRole}`;
         wrapper.setAttribute('role', 'img');
@@ -925,18 +948,22 @@ window.DurakMultiplayer = (() => {
           'aria-label',
           `${game.players[playerIndex]?.name || 'Гравець'}: ${C.rankLabel(played.rank)}${C.SUITS[played.suit].sym}`,
         );
-        wrapper.appendChild(createCardFace(played));
+        const face = createCardFace(played);
+        if (face) wrapper.appendChild(face);
         return wrapper;
       };
-      pairEl.appendChild(makePlayedCard(pair.attack, pair.attackerIndex, 'attack'));
+      const attackCard = makePlayedCard(pair.attack, pair.attackerIndex, 'attack');
+      if (attackCard) pairEl.appendChild(attackCard);
       if (pair.defend) {
-        pairEl.appendChild(makePlayedCard(pair.defend, pair.defenderIndex, 'defend'));
+        const defendCard = makePlayedCard(pair.defend, pair.defenderIndex, 'defend');
+        if (defendCard) pairEl.appendChild(defendCard);
       }
       tableEl.appendChild(pairEl);
     });
 
     handEl.innerHTML = '';
     localPlayer.hand.forEach((card, index) => {
+      if (!card) return;
       const button = document.createElement('button');
       button.className = 'durak-mp-card';
       button.type = 'button';
@@ -948,7 +975,8 @@ window.DurakMultiplayer = (() => {
       button.style.setProperty('--card-angle', `${-8 + cardProgress * 16}deg`);
       button.style.setProperty('--card-lift', `${Math.abs(index - cardCenter) * 3}px`);
       button.setAttribute('aria-label', `Зіграти ${C.rankLabel(card.rank)}${C.SUITS[card.suit].sym}`);
-      button.appendChild(createCardFace(card));
+      const face = createCardFace(card);
+      if (face) button.appendChild(face);
       button.addEventListener('click', () => playCard(index));
       handEl.appendChild(button);
     });

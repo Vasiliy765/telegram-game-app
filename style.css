@@ -1,4 +1,4 @@
-@import url("css/style.css?v=19");
+@import url("css/style.css?v=25");
 
 html,
 body {
@@ -1755,6 +1755,88 @@ body.tictactoe-active #view-tictactoe.active {
 .profile-vip-status {
   margin: 0;
   font-size: 12px;
+}
+
+.header-vip-badge,
+.vip-name-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(245, 212, 119, 0.45);
+  border-radius: 999px;
+  background: rgba(120, 83, 25, 0.28);
+  color: #ffe599;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.header-vip-badge {
+  padding: 3px 6px;
+  font-size: 9px;
+}
+
+.header-vip-badge[hidden],
+.vip-name-badge[hidden] {
+  display: none;
+}
+
+.vip-name-badge {
+  width: fit-content;
+  padding: 1px 5px;
+  font-size: 9px;
+}
+
+.vip-player-avatar {
+  position: relative;
+}
+
+.vip-avatar-badge {
+  position: absolute;
+  z-index: 4;
+  top: -4px;
+  right: -5px;
+  padding: 1px 4px;
+  border: 1px solid rgba(255, 242, 194, 0.8);
+  border-radius: 999px;
+  background: #a16207;
+  color: #fff3bd;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.leaderboard-details .vip-name-badge {
+  margin-top: -1px;
+}
+
+.account-ban-screen {
+  position: fixed;
+  z-index: 100000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(7, 8, 11, 0.97);
+}
+
+.account-ban-screen[hidden] {
+  display: none;
+}
+
+.account-ban-card {
+  max-width: 420px;
+  padding: 24px;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  border-radius: 18px;
+  background: #1b1115;
+  color: #fecaca;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.5;
+  text-align: center;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
 }
 
 .card-back {

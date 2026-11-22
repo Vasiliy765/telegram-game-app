@@ -1,5 +1,6 @@
 (function () {
   const ADMIN_ID = '7784142934';
+  const ADMIN_API_URL = 'https://telegram-game-app.onrender.com/api/admin/user-status';
   const isAdmin = () => {
     const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
     if (telegramId != null) return String(telegramId) === ADMIN_ID;
@@ -42,10 +43,11 @@
       '<div id="sa-chips" style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap"></div>' +
       '<div id="sa-st" style="font-size:12px;color:#a1a1aa;margin-bottom:10px">Введіть @username або ID</div>' +
       '<div id="sa-card" style="display:none;background:#0f0f13;border:1px solid #27272a;border-radius:12px;padding:12px">' +
-      '<b id="sa-un" style="font-size:15px"></b><div id="sa-um" style="font-size:12px;color:#a1a1aa;margin-bottom:10px"></div>' +
+      '<b id="sa-un" style="font-size:15px"></b><div id="sa-um" style="font-size:12px;color:#a1a1aa;margin-bottom:6px"></div><div id="sa-us" style="font-size:12px;color:#f5d477;margin-bottom:10px"></div>' +
       '<div style="display:flex;gap:8px;margin-bottom:10px"><div style="flex:1;background:#18181f;padding:8px;border-radius:8px;text-align:center"><b id="sa-uc" style="color:#fbbf24"></b></div><div style="flex:1;background:#18181f;padding:8px;border-radius:8px;text-align:center"><b id="sa-ud" style="color:#38bdf8"></b></div></div>' +
       '<input id="sa-amt" type="number" placeholder="Сума (напр. 100 або -50)" style="width:100%;box-sizing:border-box;background:#18181f;border:1px solid #333;border-radius:8px;padding:10px;color:#fff;margin-bottom:8px">' +
-      '<div style="display:flex;gap:8px"><button id="sa-bc" style="flex:1;background:#eab308;color:#000;border:none;border-radius:8px;padding:10px;font-weight:800">Змінити 🪙</button><button id="sa-bd" style="flex:1;background:#0284c7;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:800">Змінити 💎</button></div></div></div>';
+      '<div style="display:flex;gap:8px;margin-bottom:8px"><button id="sa-bc" style="flex:1;background:#eab308;color:#000;border:none;border-radius:8px;padding:10px;font-weight:800">Змінити 🪙</button><button id="sa-bd" style="flex:1;background:#0284c7;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:800">Змінити 💎</button></div>' +
+      '<div style="display:grid;gap:8px"><button id="sa-vip" style="background:#a16207;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:800">👑 Видати / Зняти VIP</button><button id="sa-ban" style="background:#b91c1c;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:800">🚫 Заблокувати / Розблокувати</button></div></div></div>';
     document.body.appendChild(ov);
 
     let sel = null;
@@ -57,6 +59,11 @@
       ov.querySelector('#sa-um').textContent = (sel.username ? '@' + sel.username.replace(/^@/, '') : 'без username') + ' • ID: ' + sel.id;
       ov.querySelector('#sa-uc').textContent = (sel.balance || 0) + ' 🪙';
       ov.querySelector('#sa-ud').textContent = (sel.diamonds || 0) + ' 💎';
+      const isVip = Number(sel.vipUntil || 0) > Date.now();
+      const isBanned = sel.banned === true;
+      ov.querySelector('#sa-us').textContent = `VIP: ${isVip ? 'активний' : 'неактивний'} · Блокування: ${isBanned ? 'заблоковано' : 'ні'}`;
+      ov.querySelector('#sa-vip').textContent = isVip ? '👑 Зняти VIP' : '👑 Видати VIP';
+      ov.querySelector('#sa-ban').textContent = isBanned ? '🔓 Розблокувати' : '🚫 Заблокувати';
     };
 
     async function chips() {
@@ -159,12 +166,47 @@
       }
     }
 
+    async function toggleUserStatus(action) {
+      if (!sel) {
+        st.textContent = 'Спочатку знайдіть гравця.';
+        return;
+      }
+      const initData = window.Telegram?.WebApp?.initData;
+      if (!initData) {
+        st.textContent = 'Не вдалося перевірити Telegram-акаунт адміністратора.';
+        return;
+      }
+      const enabled = action === 'set-vip'
+        ? !(Number(sel.vipUntil || 0) > Date.now())
+        : sel.banned !== true;
+      try {
+        const response = await fetch(ADMIN_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ initData, userId: String(sel.id), action, enabled }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Не вдалося змінити статус гравця.');
+        sel.vipUntil = result.vipUntil;
+        sel.banned = result.banned;
+        st.textContent = action === 'set-vip'
+          ? (Number(result.vipUntil || 0) > Date.now() ? 'VIP активовано на 30 днів.' : 'VIP-статус знято.')
+          : (result.banned ? 'Гравця заблоковано.' : 'Гравця розблоковано.');
+        draw();
+      } catch (error) {
+        console.error(`Unable to update a user's ${action} status from the admin panel.`, error);
+        st.textContent = error.message || 'Не вдалося змінити статус гравця.';
+      }
+    }
+
     const openPanel = () => { ov.style.display = 'flex'; void chips(); };
     profileBtn.onclick = openPanel;
     ov.querySelector('#sa-x').onclick = () => ov.style.display = 'none';
     ov.querySelector('#sa-s').onclick = find;
     ov.querySelector('#sa-bc').onclick = () => apply('balance', '🪙');
     ov.querySelector('#sa-bd').onclick = () => apply('diamonds', '💎');
+    ov.querySelector('#sa-vip').onclick = () => toggleUserStatus('set-vip');
+    ov.querySelector('#sa-ban').onclick = () => toggleUserStatus('set-ban');
   }
 
   const t = setInterval(() => {

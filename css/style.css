@@ -1999,6 +1999,21 @@ body.durak-game-active .views {
   cursor: pointer;
 }
 
+.durak-mp-reaction[data-vip-only="true"] {
+  border: 1px solid rgba(245, 212, 119, 0.72);
+  background: linear-gradient(145deg, #5b4314, #32171d);
+}
+
+.durak-mp-name .vip-name-badge {
+  margin-left: 3px;
+  vertical-align: 1px;
+}
+
+.durak-result-name .vip-name-badge {
+  margin-left: 5px;
+  vertical-align: 1px;
+}
+
 .durak-mp-reaction-output {
   position: absolute;
   z-index: 5;

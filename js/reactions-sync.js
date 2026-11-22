@@ -21,7 +21,6 @@
     lastReactionKey = '';
     if (unsubscribe) unsubscribe();
 
-    const myTgId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
     const roomReference = window.FirebaseRoomStore.ref(`rooms/${roomId}`).documentReference();
     unsubscribe = roomReference.onSnapshot((doc) => {
       if (!doc.exists) return;
@@ -29,10 +28,9 @@
       const ts = Number(reaction?.ts);
       if (typeof reaction?.emoji !== 'string' || reaction.senderId == null ||
           reaction.nonce == null || !Number.isFinite(ts)) return;
-      const reactionKey = `${String(reaction.nonce)}:${ts}`;
+      const reactionKey = String(reaction.nonce);
       if (reactionKey === lastReactionKey) return;
       lastReactionKey = reactionKey;
-      if (myTgId == null || String(reaction.senderId) === String(myTgId)) return;
       if (Date.now() - ts > 6000) return;
       window.DurakMultiplayer?.showReaction(String(reaction.senderId), reaction.emoji);
     }, (error) => {

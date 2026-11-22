@@ -33,7 +33,9 @@ const bot = new Bot(BOT_TOKEN);
 const updateContext = new AsyncLocalStorage();
 const WEBAPP_URL = 'https://vasiliy765.github.io/telegram-game-app/';
 const WEBAPP_ORIGIN = new URL(WEBAPP_URL).origin;
+const ADMIN_USER_STATUS_PATH = '/api/admin/user-status';
 const SALARY_COOLDOWN_MS = 3 * 60 * 60 * 1000;
+const VIP_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const DIAMOND_PACKAGES = Object.freeze({
   '10': { diamonds: 10, stars: 15 },
   '50': { diamonds: 50, stars: 65 },
@@ -145,6 +147,11 @@ async function ensureUser(user) {
   return userRef;
 }
 
+async function isUserBanned(userId) {
+  const snapshot = await users.doc(String(userId)).get();
+  return snapshot.exists && snapshot.get('banned') === true;
+}
+
 function isGroup(chat) {
   return chat.type === 'group' || chat.type === 'supergroup';
 }
@@ -184,8 +191,30 @@ function onUpdate(eventName, handler) {
     const messageContext = message || query?.message;
     const chat = messageContext?.chat || chatMember?.chat;
     const threadId = message?.message_thread_id || query?.message?.message_thread_id;
+    const user = context.from || message?.from || query?.from || chatMember?.from;
 
     return updateContext.run({ chatId: chat?.id, threadId }, async () => {
+      if (['message', 'callback_query'].includes(eventName) &&
+          user?.id != null && telegramId(user) !== ADMIN_ID &&
+          !message?.successful_payment) {
+        let banned;
+        try {
+          banned = await isUserBanned(telegramId(user));
+        } catch (error) {
+          console.error('Failed to check whether a Telegram user is banned:', error);
+          const errorMessage = 'Не вдалося перевірити статус акаунта. Спробуйте пізніше.';
+          if (message) await sendMessage(message.chat.id, errorMessage);
+          else if (query) await answerCallbackQuery(context, { text: errorMessage, show_alert: true });
+          return;
+        }
+        if (banned) {
+          const banMessage = '⛔ Ваш акаунт заблоковано адміністратором';
+          if (message) await sendMessage(message.chat.id, banMessage);
+          else if (query) await answerCallbackQuery(context, { text: banMessage, show_alert: true });
+          return;
+        }
+      }
+
       if (chat && isGroup(chat)) {
         try {
           await saveGroupChat(chat);
@@ -210,10 +239,13 @@ async function sendPlay(chatId, chatType) {
 async function sendBalance(chatId, user) {
   const userRef = await ensureUser(user);
   const snapshot = await userRef.get();
+  const vipStatus = Number(snapshot.get('vipUntil') || 0) > Date.now()
+    ? '\nСтатус: 👑 VIP Агент'
+    : '';
   await sendMessage(
     chatId,
     `🪙 Баланс ${escapeHtml(displayName(user))}: <b>${formatCoins(snapshot.get('balance') || 0)}</b> монет\n`
-      + `💎 Діаманти: <b>${formatCoins(snapshot.get('diamonds') || 0)}</b>`,
+      + `💎 Діаманти: <b>${formatCoins(snapshot.get('diamonds') || 0)}</b>${vipStatus}`,
     { parse_mode: 'HTML' },
   );
 }
@@ -329,7 +361,7 @@ async function sendSalary(chatId, user) {
         return { kind: 'cooldown', remainingMs: SALARY_COOLDOWN_MS - (now - lastSalaryAt) };
       }
 
-      const reward = Number(snapshot.get('vipUntil')) > now ? baseReward * 2 : baseReward;
+      const reward = Number(snapshot.get('vipUntil') || 0) > now ? baseReward * 2 : baseReward;
       const balance = snapshot.get('balance');
       transaction.update(userRef, {
         balance: admin.firestore.FieldValue.increment(reward),
@@ -671,8 +703,8 @@ async function sendTop(chatId) {
   const rows = snapshot.docs.map((doc, index) => {
     const player = doc.data();
     const playerName = player.name || `Гравець ${player.id}`;
-    const vipCrown = Number(player.vipUntil) > Date.now() ? '👑 ' : '';
-    return `${index + 1}. ${escapeHtml(`${vipCrown}${playerName}`)} — `
+    const vipBadge = Number(player.vipUntil || 0) > Date.now() ? '👑 VIP · ' : '';
+    return `${index + 1}. ${escapeHtml(`${vipBadge}${playerName}`)} — `
       + `<b>${formatCoins(player.balance || 0)} 🪙</b>`;
   });
   await sendMessage(chatId, `<b>🏆 Топ-10 гравців</b>\n${rows.join('\n')}`, {
@@ -1446,7 +1478,9 @@ const server = http.createServer((request, response) => {
   }
 
   const requestUrl = new URL(request.url, 'http://localhost');
-  if (requestUrl.pathname !== '/api/create-diamonds-invoice') {
+  const isInvoiceRequest = requestUrl.pathname === '/api/create-diamonds-invoice';
+  const isAdminStatusRequest = requestUrl.pathname === ADMIN_USER_STATUS_PATH;
+  if (!isInvoiceRequest && !isAdminStatusRequest) {
     response.writeHead(404);
     response.end();
     return;
@@ -1492,6 +1526,53 @@ const server = http.createServer((request, response) => {
       if (!body || typeof body !== 'object' || Array.isArray(body)) {
         throw httpError(400, 'Request body must be a JSON object.');
       }
+      if (isAdminStatusRequest) {
+        const headerInitData = request.headers['x-telegram-init-data'];
+        const initData = typeof body.initData === 'string' && body.initData.length > 0
+          ? body.initData
+          : headerInitData;
+        const telegramUser = validateTelegramInitData(initData);
+        if (String(telegramUser.id) !== ADMIN_ID) {
+          throw httpError(403, 'Only the administrator can change user status.');
+        }
+
+        const userId = String(body.userId ?? '');
+        const action = body.action;
+        if (!/^\d{1,20}$/.test(userId) || !Number.isSafeInteger(Number(userId))) {
+          throw httpError(400, 'A valid Telegram userId is required.');
+        }
+        if (!['set-vip', 'set-ban'].includes(action)) {
+          throw httpError(400, 'Unknown user status action.');
+        }
+        if (typeof body.enabled !== 'boolean') {
+          throw httpError(400, 'A boolean enabled value is required.');
+        }
+        if (userId === ADMIN_ID && action === 'set-ban' && body.enabled) {
+          throw httpError(400, 'The administrator account cannot be banned.');
+        }
+
+        const userRef = users.doc(userId);
+        const userStatus = await db.runTransaction(async (transaction) => {
+          const snapshot = await transaction.get(userRef);
+          if (!snapshot.exists) throw httpError(404, 'User profile was not found.');
+          if (action === 'set-vip') {
+            const currentVipUntil = Number(snapshot.get('vipUntil') || 0);
+            const vipUntil = body.enabled
+              ? currentVipUntil > Date.now()
+                ? currentVipUntil
+                : Date.now() + VIP_DURATION_MS
+              : 0;
+            transaction.update(userRef, { vipUntil });
+            return { vipUntil, banned: snapshot.get('banned') === true };
+          }
+          const banned = body.enabled;
+          transaction.update(userRef, { banned });
+          return { vipUntil: Number(snapshot.get('vipUntil') || 0), banned };
+        });
+        sendJson(response, 200, { userId, ...userStatus });
+        return;
+      }
+
       const userId = String(body.userId ?? '');
       const packageId = String(body.packageId ?? '');
       if (!/^\d{1,20}$/.test(userId) || !Number.isSafeInteger(Number(userId))) {

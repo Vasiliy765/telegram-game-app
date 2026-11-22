@@ -22,6 +22,8 @@
   let playerDocumentRef = null;
   let playerDocumentReadyPromise = null;
   let pendingBalanceDelta = 0;
+  let vipExpiryTimer = null;
+  let leaderboardVipExpiryTimer = null;
 
   window.APP_STATE = window.APP_STATE || {};
   window.APP_STATE.balance = readBalance();
@@ -29,6 +31,7 @@
   window.APP_STATE.ownedSkins = [DEFAULT_CARD_SKIN];
   window.APP_STATE.activeSkin = DEFAULT_CARD_SKIN;
   window.APP_STATE.vipUntil = 0;
+  window.APP_STATE.isBanned = false;
 
   let roomInviteResolved = false;
   let roomInvite = null;
@@ -223,11 +226,30 @@
       photoUrl: typeof user?.photo_url === 'string' ? user.photo_url : '',
       activeSkin: window.APP_STATE.activeSkin || DEFAULT_CARD_SKIN,
       vipUntil: Number(window.APP_STATE.vipUntil) || 0,
-      isVip: Number(window.APP_STATE.vipUntil) > Date.now(),
+      isVip: Number(window.APP_STATE.vipUntil || 0) > Date.now(),
     };
   }
 
   window.getCurrentPlayerProfile = getCurrentPlayerProfile;
+
+  function setAccountBanned(isBanned) {
+    window.APP_STATE.isBanned = isBanned;
+    document.getElementById('account-ban-screen')?.toggleAttribute('hidden', !isBanned);
+    document.body.classList.toggle('account-banned', isBanned);
+  }
+
+  window.isAccountBanned = () => window.APP_STATE.isBanned === true;
+
+  document.addEventListener('click', (event) => {
+    if (!window.isAccountBanned()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+  document.addEventListener('keydown', (event) => {
+    if (!window.isAccountBanned()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
 
   async function getFirebaseUser() {
     const auth = window.firebase.auth();
@@ -246,38 +268,60 @@
   window.renderPlayerAvatar = function renderPlayerAvatar(element, player, fallback = '') {
     if (!element) return;
     const name = typeof player?.name === 'string' ? player.name.trim() : '';
+    const isVip = Number(player?.vipUntil || 0) > Date.now();
     const initial = fallback || name.charAt(0).toUpperCase() || '👤';
     const photoUrl = typeof player?.photoUrl === 'string'
       ? player.photoUrl
       : typeof player?.photo_url === 'string' ? player.photo_url : '';
     element.textContent = initial;
+    element.classList.toggle('vip-player-avatar', isVip);
     if (player?.telegramId) element.dataset.telegramId = String(player.telegramId);
     else delete element.dataset.telegramId;
-    if (!photoUrl) return;
 
     let safePhotoUrl = '';
-    try {
-      const parsed = new URL(photoUrl, window.location.href);
-      if (parsed.protocol === 'https:') safePhotoUrl = parsed.href;
-    } catch (error) {
-      console.warn('Ignoring an invalid Telegram profile photo URL.', error);
+    if (photoUrl) {
+      try {
+        const parsed = new URL(photoUrl, window.location.href);
+        if (parsed.protocol === 'https:') safePhotoUrl = parsed.href;
+      } catch (error) {
+        console.warn('Ignoring an invalid Telegram profile photo URL.', error);
+      }
     }
-    if (!safePhotoUrl) return;
-
-    const image = document.createElement('img');
-    image.className = 'player-avatar-image';
-    image.src = safePhotoUrl;
-    image.alt = '';
-    image.referrerPolicy = 'no-referrer';
-    image.onerror = () => {
-      image.remove();
-      element.textContent = initial;
-    };
-    element.replaceChildren(image);
+    if (safePhotoUrl) {
+      const image = document.createElement('img');
+      image.className = 'player-avatar-image';
+      image.src = safePhotoUrl;
+      image.alt = '';
+      image.referrerPolicy = 'no-referrer';
+      image.onerror = () => {
+        image.remove();
+        element.textContent = initial;
+        addVipAvatarBadge(element, isVip);
+      };
+      element.replaceChildren(image);
+    }
+    addVipAvatarBadge(element, isVip);
   };
+
+  function addVipAvatarBadge(element, isVip) {
+    element.querySelector('.vip-avatar-badge')?.remove();
+    if (!isVip) return;
+    const badge = document.createElement('span');
+    badge.className = 'vip-avatar-badge';
+    badge.textContent = '👑 VIP';
+    badge.setAttribute('aria-label', 'VIP');
+    element.appendChild(badge);
+  }
 
   function renderTelegramProfile() {
     const profile = getCurrentPlayerProfile();
+    if (vipExpiryTimer) clearTimeout(vipExpiryTimer);
+    if (profile.isVip) {
+      vipExpiryTimer = setTimeout(
+        renderTelegramProfile,
+        Math.max(1, profile.vipUntil - Date.now() + 1),
+      );
+    }
     const name = document.getElementById('profile-name');
     const username = document.getElementById('profile-username');
     const id = document.getElementById('profile-user-id');
@@ -296,6 +340,8 @@
     }
     window.renderPlayerAvatar(document.getElementById('profile-avatar'), profile);
     window.renderPlayerAvatar(document.getElementById('header-avatar'), profile);
+    const headerVip = document.getElementById('header-vip-badge');
+    if (headerVip) headerVip.hidden = !profile.isVip;
   }
 
   function firebaseConfigIsReady() {
@@ -340,17 +386,20 @@
       avatar.className = 'leaderboard-avatar';
       const details = document.createElement('span');
       details.className = 'leaderboard-details';
+      const isVip = Number(player.vipUntil || 0) > Date.now();
       const name = document.createElement('strong');
-      name.textContent = Number(player.vipUntil) > Date.now()
-        ? `👑 ${player.name || 'Гравець'}`
-        : player.name || 'Гравець';
+      name.textContent = isVip ? `👑 ${player.name || 'Гравець'}` : player.name || 'Гравець';
+      const vipBadge = document.createElement('span');
+      vipBadge.className = 'vip-name-badge';
+      vipBadge.textContent = 'VIP';
+      vipBadge.hidden = !isVip;
       const identifier = document.createElement('small');
       identifier.textContent = [
         player.username,
         player.telegramId ? `ID ${player.telegramId}` : '',
       ].filter(Boolean).join(' · ');
       if (player.telegramId) row.dataset.telegramId = String(player.telegramId);
-      details.append(name, identifier);
+      details.append(name, vipBadge, identifier);
       const balance = document.createElement('strong');
       balance.className = 'leaderboard-balance';
       balance.textContent = `🪙 ${player.balance}`;
@@ -358,6 +407,17 @@
       list.appendChild(row);
       window.renderPlayerAvatar(avatar, player);
     });
+    if (leaderboardVipExpiryTimer) clearTimeout(leaderboardVipExpiryTimer);
+    const nextVipExpiry = entries.reduce((nearest, player) => {
+      const vipUntil = Number(player.vipUntil || 0);
+      return vipUntil > Date.now() && vipUntil < nearest ? vipUntil : nearest;
+    }, Number.POSITIVE_INFINITY);
+    if (Number.isFinite(nextVipExpiry)) {
+      leaderboardVipExpiryTimer = setTimeout(
+        () => renderLeaderboard(snapshot),
+        Math.max(1, nextVipExpiry - Date.now() + 1),
+      );
+    }
   }
 
   function setLeaderboardMessage(message) {
@@ -424,7 +484,11 @@
     const userId = String(telegramUser.id);
     const userDocumentRef = firestore.collection('users').doc(userId);
     userDocumentRef.onSnapshot((snapshot) => {
-      if (!snapshot.exists) return;
+      if (!snapshot.exists) {
+        setAccountBanned(false);
+        return;
+      }
+      setAccountBanned(snapshot.get('banned') === true);
       const savedBalance = parseNum(snapshot.get('balance'));
       if (!isValidCurrencyBalance(savedBalance)) {
         console.error(`Invalid balance in Firestore user document ${userId}.`);
@@ -449,6 +513,7 @@
     await firestore.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(userDocumentRef);
       if (!snapshot.exists) {
+        setAccountBanned(false);
         transaction.set(userDocumentRef, {
           id: telegramUser.id,
           ...firestoreProfileFields(),
@@ -459,6 +524,7 @@
           vipUntil: 0,
         });
       } else {
+        setAccountBanned(snapshot.get('banned') === true);
         const profileFields = firestoreProfileFields();
         const savedBalance = parseNum(snapshot.get('balance'));
         if (!isValidCurrencyBalance(savedBalance)) {
@@ -681,6 +747,7 @@
   }
 
   window.updateUserBalance = function updateUserBalance(delta) {
+    if (window.APP_STATE.isBanned) return false;
     if (!Number.isSafeInteger(delta)) {
       throw new TypeError('Balance change must be a safe integer.');
     }
@@ -702,6 +769,9 @@
   const ROOM_WAGER_PREFIX = 'tga_room_wager_';
 
   window.joinRoomWithStake = async function joinRoomWithStake(roomPath, roomCode, stake, transform) {
+    if (window.APP_STATE.isBanned) {
+      throw new Error('⛔ Ваш акаунт заблоковано адміністратором');
+    }
     const profile = getCurrentPlayerProfile();
     if (!profile.telegramId) throw new Error('Відкрийте кімнату через Telegram, щоб зробити ставку.');
     if (!window.FirebaseRoomStore?.joinWithStake) {
@@ -774,6 +844,7 @@
     if (!matchId || !Number.isSafeInteger(stake) || stake < 0) {
       throw new TypeError('A match id and non-negative integer stake are required.');
     }
+    if (window.APP_STATE.isBanned) return false;
     const key = `tga_wager_${encodeURIComponent(matchId)}`;
     const existing = JSON.parse(localStorage.getItem(key) || 'null');
     if (existing?.charged) return true;

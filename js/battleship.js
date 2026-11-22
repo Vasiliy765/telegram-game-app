@@ -166,7 +166,12 @@ window.Battleship = (() => {
   function playerName(){return playerIdentity().name;}
   function playerProfileFields(){
     const profile=playerIdentity();
-    return {telegramId:profile.telegramId,username:profile.username,photoUrl:profile.photoUrl};
+    return {
+      telegramId:profile.telegramId,
+      username:profile.username,
+      photoUrl:profile.photoUrl,
+      vipUntil:Number(profile.vipUntil)||0
+    };
   }
   function roomLink(){
     return window.createRoomInviteUrl(state.online.roomCode);

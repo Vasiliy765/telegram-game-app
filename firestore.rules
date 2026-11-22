@@ -57,7 +57,7 @@ service cloud.firestore {
       let profile = request.resource.data;
       return profile.keys().hasOnly([
           'id', 'name', 'username', 'balance', 'telegramId', 'photoUrl', 'updatedAt',
-          'diamonds', 'lastSalaryAt', 'ownedSkins', 'activeSkin', 'vipUntil'
+          'diamonds', 'lastSalaryAt', 'ownedSkins', 'activeSkin', 'vipUntil', 'banned'
         ]) &&
         (profile.get('id', 0) is int || profile.get('id', '') is string) &&
         profile.get('name', '') is string &&
@@ -69,6 +69,7 @@ service cloud.firestore {
         profile.get('updatedAt', 0) is int &&
         profile.get('diamonds', 0) is int &&
         profile.get('diamonds', 0) >= 0 &&
+        profile.get('banned', false) is bool &&
         profile.get('lastSalaryAt', 0) is int &&
         profile.get('lastSalaryAt', 0) >= 0 &&
         validShopProfile(profile);
@@ -91,7 +92,12 @@ service cloud.firestore {
 
     match /users/{telegramId} {
       allow get, list: if signedIn();
-      allow create, update: if signedIn() && validUserProfile();
+      allow create: if signedIn() &&
+        validUserProfile() &&
+        request.resource.data.get('banned', false) == false;
+      allow update: if signedIn() &&
+        validUserProfile() &&
+        request.resource.data.get('banned', false) == resource.data.get('banned', false);
       allow delete: if false;
     }
 
