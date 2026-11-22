@@ -456,6 +456,32 @@
       });
   }
 
+  window.refreshCurrentUserBalance = async function refreshCurrentUserBalance() {
+    if (!firebaseConfigIsReady() || !window.firebase?.firestore) {
+      throw new Error('Firebase Firestore недоступний для перевірки балансу.');
+    }
+
+    const telegramUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+    if (telegramUser?.id == null) {
+      throw new Error('Відкрийте гру через Telegram, щоб перевірити баланс.');
+    }
+
+    if (!window.firebase.apps.length) window.firebase.initializeApp(window.FIREBASE_CONFIG);
+    await getFirebaseUser();
+    const userId = String(telegramUser.id);
+    const snapshot = await window.firebase.firestore().collection('users').doc(userId).get();
+    if (!snapshot.exists) {
+      throw new Error(`Firestore user document ${userId} does not exist.`);
+    }
+
+    const balance = Number(snapshot.data()?.balance || 0);
+    if (!isValidCurrencyBalance(balance)) {
+      throw new Error(`Invalid balance in Firestore user document ${userId}.`);
+    }
+    applyRemoteBalance(balance, 'firestore-refresh');
+    return balance;
+  };
+
   function renderBalance() {
     const balance = formatCurrency(window.APP_STATE.balance);
     ['balance', 'store-balance', 'profile-balance', 'durak-balance'].forEach((id) => {

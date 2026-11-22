@@ -412,18 +412,19 @@ window.Battleship = (() => {
   async function startOnlineGame(){
     const online=state.online;
     if(!online||String(online.uid)!==String(online.roomData.meta?.hostId))return;
-    if(Number(window.APP_STATE?.balance)<state.stake){
-      notify('Недостатньо монет для ставки 🪙');
-      return;
-    }
-    if(online.localTest){
-      if(!canStartBattle(online.roomData)){notify('Усі гравці мають натиснути «Готово».');return;}
-      online.roomData.meta.status='setup';
-      online.roomData.meta.setupDeadline=Date.now()+SETUP_DURATION_MS;
-      onOnlineRoom(online.roomData);
-      return;
-    }
     try{
+      const balance=online.localTest?Number(window.APP_STATE?.balance):await window.refreshCurrentUserBalance();
+      if(!Number.isFinite(balance)||balance<state.stake){
+        notify('Недостатньо монет для ставки 🪙');
+        return;
+      }
+      if(online.localTest){
+        if(!canStartBattle(online.roomData)){notify('Усі гравці мають натиснути «Готово».');return;}
+        online.roomData.meta.status='setup';
+        online.roomData.meta.setupDeadline=Date.now()+SETUP_DURATION_MS;
+        onOnlineRoom(online.roomData);
+        return;
+      }
       const result=await online.db.ref(`battleshipRooms/${online.roomCode}`).transaction(room=>{
         if(!room||String(room.meta?.hostId)!==String(online.uid)||room.meta?.status!=='waiting'||
             !canStartBattle(room))return;
@@ -434,7 +435,7 @@ window.Battleship = (() => {
       if(!result.committed)notify('Почати можна, коли всі гравці готові.');
     }catch(error){
       console.error('Unable to start Battleship room',error);
-      notify('Не вдалося почати гру.');
+      notify(error.message||'Не вдалося почати гру.');
     }
   }
 
@@ -1101,32 +1102,33 @@ window.Battleship = (() => {
   }
 
   async function resetOnlineRoomForRematch(){
-    if(Number(window.APP_STATE?.balance)<state.stake){
-      notify('Недостатньо монет для реваншу 🪙');
-      return;
-    }
-    state.screen='lobby';
-    state.wagerStarted=false;state.wagerId=null;state.payout=0;
-    if(!state.online.db){
-      const room=state.online.roomData;
-      room.meta.round=(Number(room.meta.round)||1)+1;
-      room.meta.status='waiting';
-      room.players[state.online.uid].ready=false;
-      room.players[state.online.uid].fleet=null;
-      room.players[state.online.uid].board=null;
-      room.players[state.online.uid].shipsPlaced=false;
-      Object.values(room.players).filter(player=>player.isBot).forEach(player=>{
-        const fleet=randomFleet();
-        player.ready=true;
-        player.fleet=serializeFleet(fleet.ships);
-        player.board=fleet.grid.slice();
-        player.shipsPlaced=true;
-      });
-      onOnlineRoom(room);
-      return;
-    }
-    const reference=state.online.db.ref(`battleshipRooms/${state.online.roomCode}`);
     try{
+      const balance=state.online.localTest?Number(window.APP_STATE?.balance):await window.refreshCurrentUserBalance();
+      if(!Number.isFinite(balance)||balance<state.stake){
+        notify('Недостатньо монет для реваншу 🪙');
+        return;
+      }
+      state.screen='lobby';
+      state.wagerStarted=false;state.wagerId=null;state.payout=0;
+      if(!state.online.db){
+        const room=state.online.roomData;
+        room.meta.round=(Number(room.meta.round)||1)+1;
+        room.meta.status='waiting';
+        room.players[state.online.uid].ready=false;
+        room.players[state.online.uid].fleet=null;
+        room.players[state.online.uid].board=null;
+        room.players[state.online.uid].shipsPlaced=false;
+        Object.values(room.players).filter(player=>player.isBot).forEach(player=>{
+          const fleet=randomFleet();
+          player.ready=true;
+          player.fleet=serializeFleet(fleet.ships);
+          player.board=fleet.grid.slice();
+          player.shipsPlaced=true;
+        });
+        onOnlineRoom(room);
+        return;
+      }
+      const reference=state.online.db.ref(`battleshipRooms/${state.online.roomCode}`);
       const result=await reference.transaction(room=>{
         if(!room||room.meta?.status!=='finished')return room;
         room.meta.round=(Number(room.meta.round)||1)+1;
@@ -1149,7 +1151,7 @@ window.Battleship = (() => {
       if(result.snapshot.exists())onOnlineRoom(result.snapshot.val());
     }catch(error){
       console.error('Unable to restart Battleship room',error);
-      notify('Не вдалося створити реванш.');
+      notify(error.message||'Не вдалося створити реванш.');
     }
   }
 

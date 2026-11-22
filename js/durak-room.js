@@ -592,13 +592,14 @@ window.DurakRoom = (() => {
 
   async function startGame(isRematch = false) {
     if (!canStart() || (state.roomStarted && !isRematch)) return;
-    if (state.isOnline && Number(window.APP_STATE?.balance) < state.settings.stake) {
-      notify('Недостатньо монет для ставки 🪙');
-      return;
-    }
     const options = gameOptions();
     try {
       if (state.isOnline) {
+        const balance = await window.refreshCurrentUserBalance();
+        if (balance < state.settings.stake) {
+          notify('Недостатньо монет для ставки 🪙');
+          return;
+        }
         state.startingGame = true;
         const result = await roomReference().transaction((room) => {
           if (!room || String(room.meta?.hostId) !== String(state.myId) ||

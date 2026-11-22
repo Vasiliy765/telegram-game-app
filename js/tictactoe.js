@@ -476,11 +476,12 @@ window.TicTacToe = (() => {
       if (canStartOnlineRoom(online.roomData)) startLocalGame('test', state.stake, `${online.roomCode}-1`);
       return;
     }
-    if (Number(window.APP_STATE?.balance) < state.stake) {
-      notify('Недостатньо монет для ставки 🪙');
-      return;
-    }
     try {
+      const balance = await window.refreshCurrentUserBalance();
+      if (balance < state.stake) {
+        notify('Недостатньо монет для ставки 🪙');
+        return;
+      }
       await online.db.ref(`tictactoeRooms/${online.roomCode}`).transaction((room) => {
         if (!room || String(room.meta?.hostId) !== String(online.uid) ||
             room.meta?.status !== 'waiting' || !canStartOnlineRoom(room)) return;
@@ -825,13 +826,14 @@ window.TicTacToe = (() => {
   }
 
   async function requestOnlineRematch() {
-    if (Number(window.APP_STATE?.balance) < state.stake) {
-      notify('Недостатньо монет для реваншу 🪙');
-      return;
-    }
     const online = state.online;
     const reference = online.db.ref(`tictactoeRooms/${online.roomCode}`);
     try {
+      const balance = await window.refreshCurrentUserBalance();
+      if (balance < state.stake) {
+        notify('Недостатньо монет для реваншу 🪙');
+        return;
+      }
       await reference.child(`players/${online.uid}/rematchReady`).set(true);
       state.rematchWaiting = true;
       renderFinal(state.winnerSymbol);

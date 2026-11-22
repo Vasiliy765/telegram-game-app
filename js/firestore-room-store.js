@@ -234,7 +234,8 @@ window.FirebaseRoomStore = (() => {
       }
       if (!update?.room) throw new Error(update?.error || 'До кімнати більше не можна приєднатися.');
 
-      const balance = userSnapshot.get('balance');
+      const userData = userSnapshot.data();
+      const balance = Number(userData.balance || 0);
       if (!Number.isFinite(balance) || balance < 0 || balance > Number.MAX_SAFE_INTEGER ||
           (direction < 0 && balance < stake) ||
           !Number.isFinite(balance + direction * stake) || balance + direction * stake < 0 ||
@@ -244,7 +245,7 @@ window.FirebaseRoomStore = (() => {
 
       transaction.set(roomDocument, update.room);
       transaction.update(userDocument, {
-        balance: window.firebase.firestore.FieldValue.increment(direction * stake),
+        balance: balance + direction * stake,
       });
       outcome = { alreadyJoined: false, balance: balance + direction * stake, room: update.room };
     });
