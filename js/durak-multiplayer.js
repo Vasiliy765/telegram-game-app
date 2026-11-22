@@ -1092,13 +1092,15 @@ window.DurakMultiplayer = (() => {
   function showReaction(senderId, emoji) {
     if (!game || typeof senderId !== 'string' || typeof emoji !== 'string') return;
     const target = [...document.querySelectorAll('.durak-mp-avatar, #durak-mp-own-avatar')]
-      .find((avatar) => avatar.dataset.playerId === senderId);
+      .find((avatar) => avatar.dataset.playerId === senderId || avatar.dataset.telegramId === senderId);
     if (!target) return;
-    target.querySelector('.durak-mp-reaction-bubble')?.remove();
     const bubble = document.createElement('span');
-    const isSelf = String(senderId) === String(game.localPlayerId);
+    const localPlayer = game.players[game.localPlayerIndex];
+    const isSelf = String(senderId) === String(game.localPlayerId) ||
+      String(senderId) === String(localPlayer.telegramId);
     bubble.className = `durak-mp-reaction-bubble${isSelf ? ' own' : ''}`;
     bubble.textContent = emoji;
+    bubble.style.fontSize = '40px';
     target.appendChild(bubble);
     setTimeout(() => bubble.remove(), 1800);
   }

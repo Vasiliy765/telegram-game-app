@@ -28,7 +28,6 @@ window.DurakRoom = (() => {
     leaving: false,
     startingGame: false,
     isMovePending: false,
-    lastShownReactionTs: null,
   };
 
   function randomBotName() {
@@ -100,7 +99,6 @@ window.DurakRoom = (() => {
     state.enteredGame = false;
     state.leaving = false;
     state.isMovePending = false;
-    state.lastShownReactionTs = null;
   }
 
   function listen(reference, event, callback) {
@@ -481,9 +479,10 @@ window.DurakRoom = (() => {
     if (!state.isOnline || !state.roomCode || typeof emoji !== 'string') return;
     try {
       await roomDocumentReference().update({
-        reaction: {
+        lastReaction: {
           emoji,
-          senderId: String(state.myId),
+          senderId: String(tg.initDataUnsafe?.user?.id ?? state.myId),
+          nonce: Math.random(),
           ts: Date.now(),
         },
       });
@@ -491,20 +490,6 @@ window.DurakRoom = (() => {
       console.error('Unable to share a Durak reaction', error);
       notify('Не вдалося надіслати реакцію.');
     }
-  }
-
-  function listenToReactions() {
-    listen(roomReference(), 'value', (snapshot) => {
-      const roomData = snapshot.val();
-      const reaction = roomData?.reaction;
-      const reactionTs = Number(reaction?.ts);
-      if (!Number.isFinite(reactionTs) || reactionTs === state.lastShownReactionTs ||
-          typeof reaction?.emoji !== 'string' || reaction.senderId == null) return;
-      const age = Date.now() - reactionTs;
-      if (age < 0 || age >= 5000) return;
-      state.lastShownReactionTs = reactionTs;
-      window.DurakMultiplayer.showReaction(String(reaction.senderId), reaction.emoji);
-    });
   }
 
   function enterOnlineGame() {
@@ -595,7 +580,6 @@ window.DurakRoom = (() => {
       slotsFromSnapshot(snapshot.val());
       renderRoom();
     });
-    listenToReactions();
   }
 
   function randomRoomCode() {
@@ -979,6 +963,6 @@ window.DurakRoom = (() => {
     mountPublicRooms,
     startGame,
     sendReaction,
-    getRoomCode: () => state.roomCode,
+    getRoomCode: () => state.isOnline ? state.roomCode : '',
   };
 })();

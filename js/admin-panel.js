@@ -1,15 +1,29 @@
 (function () {
   const ADMIN_ID = '7784142934';
-  const myId = () => String(window.Telegram?.WebApp?.initDataUnsafe?.user?.id || '');
+  const isAdmin = () => {
+    const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    if (telegramId != null) return String(telegramId) === ADMIN_ID;
+    const profile = window.getCurrentPlayerProfile?.() || {};
+    const displayedId = document.getElementById('profile-user-id')?.textContent?.trim();
+    return [
+      profile.telegramId,
+      profile.id,
+      window.currentUser?.id,
+      window.APP_STATE?.telegramId,
+      displayedId,
+    ].some((id) => id != null && String(id).trim() === ADMIN_ID);
+  };
 
   function init() {
-    if (myId() !== ADMIN_ID || document.getElementById('sa-adm-btn')) return;
+    if (!isAdmin() || document.getElementById('sa-adm-btn')) return;
 
     const btn = document.createElement('button');
     btn.id = 'sa-adm-btn';
-    btn.textContent = '🛡️ Адмін';
-    btn.style.cssText = 'position:fixed;bottom:78px;right:14px;z-index:99990;background:#f43f5e;color:#fff;border:none;border-radius:99px;padding:9px 15px;font-size:13px;font-weight:700;box-shadow:0 6px 20px rgba(244,63,94,.45);cursor:pointer';
+    btn.textContent = '🛡️ Адмін-панель';
+    btn.style.cssText = 'position:fixed;bottom:78px;right:14px;z-index:99990;background:#dc2626;color:#fff;border:none;border-radius:99px;padding:13px 18px;font-size:15px;font-weight:800;box-shadow:0 6px 20px rgba(220,38,38,.45);cursor:pointer';
     document.body.appendChild(btn);
+    const profileBtn = document.getElementById('sa-profile-adm-btn');
+    if (profileBtn) profileBtn.hidden = false;
 
     const ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(10,10,14,.88);display:none;align-items:center;justify-content:center;padding:16px';
@@ -37,47 +51,116 @@
     };
 
     async function chips() {
-      const db = window.firebase?.firestore?.(); if (!db) return;
+      const db = window.firebase?.firestore?.();
+      if (!db) {
+        st.textContent = 'Firestore недоступний.';
+        return;
+      }
       const w = ov.querySelector('#sa-chips'); w.innerHTML = '';
-      const snap = await db.collection('users').limit(6).get();
-      snap.forEach(d => {
-        const u = d.data(), c = document.createElement('button');
-        c.textContent = u.username ? '@' + u.username.replace(/^@/, '') : (u.name || d.id);
-        c.style.cssText = 'background:#27272a;border:none;color:#fff;border-radius:6px;padding:4px 8px;font-size:11px';
-        c.onclick = () => { sel = { id: d.id, ...u }; st.textContent = 'Обрано'; draw(); };
-        w.appendChild(c);
-      });
+      try {
+        const snap = await db.collection('users').limit(6).get();
+        snap.forEach(d => {
+          const u = d.data(), c = document.createElement('button');
+          c.textContent = u.username ? '@' + u.username.replace(/^@/, '') : (u.name || d.id);
+          c.style.cssText = 'background:#27272a;border:none;color:#fff;border-radius:6px;padding:4px 8px;font-size:11px';
+          c.onclick = () => { sel = { id: d.id, ...u }; st.textContent = 'Обрано'; draw(); };
+          w.appendChild(c);
+        });
+      } catch (error) {
+        console.error('Unable to load admin-panel player suggestions.', error);
+        st.textContent = 'Не вдалося завантажити гравців.';
+      }
     }
 
     async function find() {
       const raw = ov.querySelector('#sa-q').value.trim(), db = window.firebase?.firestore?.();
-      if (!raw || !db) return;
-      st.textContent = 'Пошук...';
-      if (/^\d+$/.test(raw)) {
-        const d = await db.collection('users').doc(raw).get();
-        if (d.exists) { sel = { id: d.id, ...d.data() }; st.textContent = 'Знайдено'; return draw(); }
+      if (!raw) {
+        st.textContent = 'Введіть @username або ID';
+        sel = null;
+        draw();
+        return;
       }
-      const clean = raw.replace(/^@/, '').toLowerCase(), snap = await db.collection('users').get();
+      if (!db) {
+        st.textContent = 'Firestore недоступний.';
+        return;
+      }
       sel = null;
-      snap.forEach(d => { const u = d.data(); if ((u.username || '').replace(/^@/, '').toLowerCase() === clean) sel = { id: d.id, ...u }; });
-      st.textContent = sel ? 'Знайдено' : 'Не знайдено'; draw();
+      st.textContent = 'Пошук...';
+      try {
+        if (/^\d+$/.test(raw)) {
+          const d = await db.collection('users').doc(raw).get();
+          if (d.exists) {
+            sel = { id: d.id, ...d.data() };
+          } else {
+            for (const field of ['telegramId', 'id']) {
+              const matches = await db.collection('users').where(field, '==', raw).limit(1).get();
+              if (!matches.empty) {
+                const match = matches.docs[0];
+                sel = { id: match.id, ...match.data() };
+                break;
+              }
+            }
+          }
+        }
+        if (!sel) {
+          const clean = raw.replace(/^@/, '').toLowerCase();
+          const snap = await db.collection('users').get();
+          snap.forEach(d => {
+            const u = d.data();
+            if (!sel && (u.username || '').replace(/^@/, '').toLowerCase() === clean) {
+              sel = { id: d.id, ...u };
+            }
+          });
+        }
+        st.textContent = sel ? 'Знайдено' : 'Не знайдено';
+        draw();
+      } catch (error) {
+        console.error('Unable to find a Firestore user from the admin panel.', error);
+        st.textContent = 'Помилка пошуку гравця.';
+        draw();
+      }
     }
 
     async function apply(field, icon) {
       const db = window.firebase?.firestore?.(), val = Number(ov.querySelector('#sa-amt').value);
-      if (!sel  !db  !val || Number.isNaN(val)) return;
+      if (!sel) {
+        st.textContent = 'Спочатку знайдіть гравця.';
+        return;
+      }
+      if (!db) {
+        st.textContent = 'Firestore недоступний.';
+        return;
+      }
+      if (!Number.isSafeInteger(val) || val === 0) {
+        st.textContent = 'Введіть ненульове ціле число.';
+        return;
+      }
       const next = Math.max(0, Number(sel[field] || 0) + val);
-      await db.collection('users').doc(String(sel.id)).set({ [field]: next }, { merge: true });
-      sel[field] = next; ov.querySelector('#sa-amt').value = '';
-      st.textContent = 'Готово: ' + (val > 0 ? '+' + val : val) + ' ' + icon; draw();
+      try {
+        await db.collection('users').doc(String(sel.id)).set({ [field]: next }, { merge: true });
+        sel[field] = next;
+        ov.querySelector('#sa-amt').value = '';
+        st.textContent = 'Готово: ' + (val > 0 ? '+' + val : val) + ' ' + icon;
+        draw();
+      } catch (error) {
+        console.error(`Unable to update a user's ${field} from the admin panel.`, error);
+        st.textContent = 'Не вдалося змінити баланс.';
+      }
     }
 
-    btn.onclick = () => { ov.style.display = 'flex'; chips(); };
+    const openPanel = () => { ov.style.display = 'flex'; void chips(); };
+    btn.onclick = openPanel;
+    if (profileBtn) profileBtn.onclick = openPanel;
     ov.querySelector('#sa-x').onclick = () => ov.style.display = 'none';
     ov.querySelector('#sa-s').onclick = find;
     ov.querySelector('#sa-bc').onclick = () => apply('balance', '🪙');
     ov.querySelector('#sa-bd').onclick = () => apply('diamonds', '💎');
   }
 
-  const t = setInterval(() => { if (myId()) { init(); clearInterval(t); } }, 600);
+  const t = setInterval(() => {
+    if (isAdmin()) {
+      init();
+      clearInterval(t);
+    }
+  }, 600);
 })();
