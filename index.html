@@ -1,0 +1,378 @@
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <title>Ігровий центр · Telegram Mini App</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="style.css?v=21">
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-icon">🎯</div>
+        <div class="brand-text">ШПИГУН / ОПЕРАТИВНИЙ ЦЕНТР</div>
+      </div>
+      <div class="header-actions">
+        <div class="header-balance" aria-label="Баланс монет">🪙 <span id="balance">0</span></div>
+        <button class="btn-menu">☰</button>
+        <div class="avatar" id="header-avatar">A</div>
+      </div>
+    </header>
+    <nav class="bottom-nav">
+      <button class="nav-item active" data-view="home" aria-label="Ігри"><span class="nav-icon">🎮</span><span class="nav-label">Ігри</span></button>
+      <button class="nav-item" data-view="store" aria-label="Монети"><span class="nav-icon">🪙</span><span class="nav-label">Монети</span></button>
+      <button class="nav-item" data-view="commands" aria-label="РП / Міні-ігри"><span class="nav-icon">🎲</span><span class="nav-label">Міні-ігри</span></button>
+      <button class="nav-item" data-view="profile" aria-label="Профіль"><span class="nav-icon">👤</span><span class="nav-label">Профіль</span></button>
+    </nav>
+    <main class="views" id="views">
+      <!-- Головний екран -->
+      <section id="view-home" class="view active">
+        <div class="home-wrapper">
+          <div class="page-title">
+            <div class="page-subtitle">ОПЕРАТИВНИЙ ЦЕНТР · АРКАДА</div>
+            <h1 class="page-heading">ІГРОВИЙ ЦЕНТР</h1>
+          </div>
+
+          <div class="game-list">
+            <div class="game-card" data-view="battleship">
+              <div class="game-icon" style="background:#1e3a8a;color:#60a5fa;">🚢</div>
+              <div class="game-info">
+                <div class="game-name">Морський бій</div>
+                <div class="game-desc">Тактична дуель на прихованих флотах.</div>
+              </div>
+              <div class="game-arrow">▶</div>
+            </div>
+            <div class="game-card" data-view="durak">
+              <div class="game-icon" style="background:#7f1d1d;color:#fca5a5;">📦</div>
+              <div class="game-info">
+                <div class="game-name">Дурень</div>
+                <div class="game-desc">Карткова гра на 2–6 учасників.</div>
+              </div>
+              <div class="game-arrow">▶</div>
+            </div>
+            <div class="game-card" data-view="tictactoe">
+              <div class="game-icon" style="background:#581c87;color:#d8b4fe;">⬡</div>
+              <div class="game-info">
+                <div class="game-name">Хрестики-нулики</div>
+                <div class="game-desc">Швидка дуель на полі 3×3.</div>
+              </div>
+              <div class="game-arrow">▶</div>
+            </div>
+          </div>
+          <section class="leaderboard-card" aria-labelledby="leaderboard-title">
+            <div class="leaderboard-heading">
+              <h2 id="leaderboard-title">Топ гравців</h2>
+              <span>За балансом 🪙</span>
+            </div>
+            <div class="leaderboard-list" id="leaderboard-list" aria-live="polite">
+              <p class="leaderboard-message">Завантаження рейтингу…</p>
+            </div>
+          </section>
+          <button class="btn-create btn primary" id="home-create-table">Створити стіл</button>
+        </div>
+      </section>
+
+      <section id="view-store" class="view">
+        <div class="game-header"><button class="back-btn" data-view="home">← Назад</button><h2>Монети</h2></div>
+        <div class="store" id="store-game">
+          <div class="balance-card"><div class="balance-row"><span>Ваш баланс</span><span class="big" id="store-balance">0</span> <span class="star">🪙</span></div><div class="balance-hint">Зберігається у браузері.</div></div>
+          <div class="store-section"><h3 class="section-title">Поповнення через Telegram Stars</h3><div class="stars-row" id="store-stars"></div></div>
+          <div class="store-section"><h3 class="section-title">Скіни для карт (Дурак)</h3><div class="skins" id="store-skins"></div><div class="store-note">Обраний скін застосовується до рубашки карт у грі Дурак.</div></div>
+        </div>
+      </section>
+
+      <!-- ДУРАК -->
+      <section id="view-durak" class="view">
+        <div class="game-header">
+          <button class="back-btn" data-view="home">← Назад</button>
+          <span class="durak-title">Дурак</span>
+          <div class="durak-top-bar">
+            <div class="balance">🪙 <span id="durak-balance">0</span></div>
+          </div>
+        </div>
+        <!-- Слот creación -->
+        <div class="durak-create-slot">
+          <div class="create-btns">
+            <button class="btn create-btn create">Створити</button>
+            <button class="btn create-btn quick">Швидка гра</button>
+          </div>
+          <div class="current-settings">Простий · 36 · 👤 4 · 🪙 10</div>
+          <div class="room-requests">
+            <span class="room-label">Відкриті столи</span>
+            <button class="btn btn-update">Оновити</button>
+          </div>
+          <div class="empty-state">Немає відкритих кімнат</div>
+        </div>
+        <!-- Шторка налаштувань столу (Дурак) -->
+        <div class="settings-drawer" id="durak-settings-drawer">
+          <div class="drawer-header">
+            <span>Нова гра · Дурак</span>
+            <button type="button" class="drawer-close" id="durak-settings-close" aria-label="Закрити налаштування">×</button>
+          </div>
+          <div class="drawer-body">
+            <div class="setting-row">
+              <label class="setting-label">Режим гри</label>
+              <div class="toggle-btn-group" id="durak-mode-toggle">
+                <button class="toggle-btn secondary active" data-value="Простий">Простий</button>
+                <button class="toggle-btn secondary" data-value="Перекидной">Перекидной</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">Колода</label>
+              <div class="toggle-btn-group" id="durak-deck-toggle">
+                <button class="toggle-btn secondary active" data-value="36">36 карт</button>
+                <button class="toggle-btn secondary" data-value="52">52 карти</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">Кількість гравців</label>
+              <div class="toggle-btn-group" id="durak-players-toggle">
+                <button class="toggle-btn secondary" data-value="2">2</button>
+                <button class="toggle-btn secondary" data-value="3">3</button>
+                <button class="toggle-btn secondary active" data-value="4">4</button>
+                <button class="toggle-btn secondary" data-value="5">5</button>
+                <button class="toggle-btn secondary" data-value="6">6</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">Тип кімнати</label>
+              <div class="toggle-btn-group" id="durak-roomtype-toggle">
+                <button class="toggle-btn badge-room-type active" data-value="Закрита">🔒 Закрита</button>
+                <button class="toggle-btn badge-room-type" data-value="Відкрита">🌐 Відкрита</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">Ставка</label>
+              <div class="setting-stake">
+                <div class="toggle-btn-group" id="durak-stake-toggle">
+                  <button class="toggle-btn stake active" data-value="10">🪙 10</button>
+                  <button class="toggle-btn stake" data-value="25">🪙 25</button>
+                  <button class="toggle-btn stake" data-value="50">🪙 50</button>
+                  <button class="toggle-btn stake" data-value="100">🪙 100</button>
+                </div>
+                <div class="bank-display" id="durak-bank-display">🪙 10 з кожного · банк 🪙 40</div>
+              </div>
+            </div>
+          </div>
+          <div class="drawer-footer">
+            <button class="btn btn-primary btn-full" id="durak-create-table">Створити стіл</button>
+          </div>
+        </div>
+        <div class="drawer-overlay" id="durak-settings-overlay"></div>
+        <div class="durak" id="durak-game">
+          <div class="durak-status" id="durak-status">Роздача...</div>
+          <div class="durak-top">
+            <div class="trump-box"><div class="trump-label">Козир</div><div id="durak-trump" class="trump-card"></div><div id="durak-trump-suit" class="trump-suit"></div></div>
+            <div class="deck-box" id="durak-deck"><div class="deck-label">Колода</div><div class="deck-visual" id="durak-deck-visual"></div><div id="durak-deck-count" class="deck-count">36</div></div>
+          </div>
+          <div class="durak-table" id="durak-table"></div>
+          <div class="bot-hand" id="durak-bot-hand"></div>
+          <div class="durak-msg" id="durak-msg"></div>
+          <div class="player-hand" id="durak-player-hand"></div>
+          <div class="durak-footer" id="durak-footer"></div>
+        </div>
+      </section>
+
+      <!-- КІМНАТА ОЧІКУВАННЯ ГРИ «ДУРАК» -->
+      <section id="view-durak-room" class="view">
+        <div class="game-header">
+          <button class="back-btn" data-view="durak">← Назад до Дурака</button>
+          <h2>Кімната столу</h2>
+        </div>
+        <div class="durak-room" id="durak-room-game">
+          <!-- Верхні бейджі -->
+          <div class="room-badges">
+            <span class="badge badge-room" id="durak-room-badge-type">🔒 Закрита</span>
+            <span class="badge badge-timer" id="durak-room-badge-timer">Стіл закриється через <span class="timer-digits">29:59</span></span>
+          </div>
+
+          <!-- Центральне коло гравців -->
+          <div class="room-circle">
+            <div class="room-center">
+              <div class="room-count" id="durak-room-count">1/4</div>
+              <div class="room-mode" id="durak-room-mode">Простий · 36</div>
+              <div class="room-stake" id="durak-room-stake">🪙 10</div>
+            </div>
+            <div class="room-slots" id="durak-room-slots"></div>
+          </div>
+
+          <!-- Підрахунок банку -->
+          <div class="room-bank" id="durak-room-bank">
+            <span class="bank-label">🪙 10 з кожного</span>
+            <span class="bank-dot">·</span>
+            <span class="bank-value">банк 🪙 <span id="durak-room-bank-value">40</span></span>
+          </div>
+
+          <!-- Кнопки керування -->
+          <div class="room-controls">
+            <button class="btn btn-full btn-ready" id="durak-room-ready">Готовий</button>
+            <button class="btn btn-full btn-add-test" id="durak-room-add-test">+ Тест-гравець</button>
+            <button class="btn btn-primary btn-full btn-invite" id="durak-room-invite">Запросити гравців</button>
+            <button class="btn btn-full btn-copy" id="durak-room-copy">Скопіювати посилання</button>
+            <div class="room-status" id="durak-room-status">Чекаємо готовності · 0/1</div>
+            <button class="btn btn-full btn-exit" id="durak-room-exit">Вийти</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- МОРСЬКИЙ БІЙ -->
+      <section id="view-battleship" class="view">
+        <div id="screen-battleship" class="bs-app"></div>
+      </section>
+
+      <!-- ДУРАК: Ігровий стіл -->
+      <section id="view-durak-table" class="view">
+        <div class="durak-mp" id="durak-mp">
+          <header class="durak-mp-header">
+            <button class="durak-mp-exit" type="button" data-view="durak-room" aria-label="Вийти до кімнати">←</button>
+            <div class="durak-mp-pills">
+              <span class="durak-mp-pill durak-mp-bank">Банк 🪙 <b id="durak-mp-bank">40</b></span>
+              <span class="durak-mp-pill">Козир <b id="durak-mp-trump-suit">♠</b></span>
+              <span class="durak-mp-pill" id="durak-mp-mode">Простий · 36</span>
+            </div>
+            <button class="durak-mp-sound" id="durak-mp-sound" type="button" aria-label="Вимкнути звук" aria-pressed="false">🔊</button>
+          </header>
+          <div class="durak-mp-players" id="durak-mp-players"></div>
+          <div class="durak-mp-stage">
+            <div class="durak-mp-table" id="durak-mp-table"></div>
+            <aside class="durak-mp-stock" aria-label="Колода">
+              <span class="durak-mp-stock-count" id="durak-mp-stock-count">0</span>
+              <div class="durak-mp-stock-stack">
+                <span class="durak-mp-stock-back"></span>
+                <div id="durak-mp-trump" class="durak-mp-trump"></div>
+              </div>
+            </aside>
+          </div>
+          <div class="durak-mp-last-action" id="durak-mp-last-action" aria-live="polite"></div>
+          <div class="durak-mp-controls">
+            <div class="durak-mp-reactions" id="durak-mp-reactions" role="group" aria-label="Емоції за столом">
+              <div class="durak-mp-reaction-output" id="durak-mp-reaction-output" aria-live="polite"></div>
+              <div class="durak-mp-reaction-menu" id="durak-mp-reaction-menu" hidden>
+                <button type="button" class="durak-mp-reaction" data-emoji="🙂" aria-label="Усмішка">🙂</button>
+                <button type="button" class="durak-mp-reaction" data-emoji="😂" aria-label="Смішно">😂</button>
+                <button type="button" class="durak-mp-reaction" data-emoji="😎" aria-label="Круто">😎</button>
+                <button type="button" class="durak-mp-reaction" data-emoji="😡" aria-label="Злюся">😡</button>
+                <button type="button" class="durak-mp-reaction" data-emoji="😱" aria-label="Здивований">😱</button>
+                <button type="button" class="durak-mp-reaction" data-emoji="👍" aria-label="Подобається">👍</button>
+                <button type="button" class="durak-mp-reaction" data-emoji="🤝" aria-label="Домовились">🤝</button>
+                <button type="button" class="durak-mp-reaction" data-emoji="🃏" aria-label="Джокер">🃏</button>
+              </div>
+              <button type="button" class="durak-mp-reaction-toggle" id="durak-mp-reaction-toggle" aria-label="Відкрити емоції" aria-expanded="false">☺</button>
+              <div class="durak-mp-own-avatar" id="durak-mp-own-avatar" aria-label="Ваш аватар"></div>
+            </div>
+            <div class="durak-mp-turn">
+              <div class="durak-mp-status" id="durak-mp-status" aria-live="polite"></div>
+              <div class="durak-mp-actions" id="durak-mp-actions"></div>
+            </div>
+          </div>
+          <div class="durak-mp-hand" id="durak-mp-hand"></div>
+          <div class="durak-result-overlay" id="durak-result-overlay" hidden>
+            <section class="durak-result-dialog" role="dialog" aria-modal="true" aria-labelledby="durak-result-title">
+              <div class="durak-result-summary">
+                <h1 id="durak-result-title"></h1>
+                <p id="durak-result-change"></p>
+              </div>
+              <div class="durak-result-players" id="durak-result-players" aria-label="Результати партії"></div>
+              <div class="durak-result-actions">
+                <button class="durak-result-button rematch" id="durak-result-rematch" type="button">Реванш</button>
+                <button class="durak-result-button new-table" id="durak-result-new-table" type="button">Новий стіл</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <!-- ХРЕСТИКИ-НУЛИКИ -->
+      <section id="view-tictactoe" class="view">
+        <div class="game-header"><button class="back-btn" data-view="home">← Назад</button><h2>Хрестики-нулики</h2></div>
+        <div class="ttt" id="tictactoe-game">
+          <div class="ttt-score"><span>Ви <span id="ttt-score-you">0</span></span><span>Нічия <span id="ttt-score-draw">0</span></span><span>Бот <span id="ttt-score-bot">0</span></span></div>
+          <div class="ttt-controls"><label class="diff">Складність: <select id="ttt-difficulty"><option value="easy">Легка</option><option value="medium">Середня</option><option value="hard">Важка (неможлива)</option></select></label><button class="btn btn-primary btn-small" id="ttt-reset">Нова гра</button></div>
+          <div class="ttt-status" id="ttt-status">Ваш хід (Х)</div>
+          <div class="ttt-board" id="ttt-board"></div>
+          <div class="ttt-hint" id="ttt-hint">Ви граєте Х, бот — О</div>
+        </div>
+      </section>
+
+      <!-- Каталог чат-ігор -->
+      <section id="view-commands" class="view">
+        <div class="game-header"><button class="back-btn" data-view="home">← Назад</button><h2>РП / Міні-ігри</h2></div>
+        <div class="chat-games-catalog" id="chat-games-catalog">
+          <article class="chat-game-card">
+            <header class="chat-game-heading"><span class="chat-game-icon">🪙</span><div><h3>Монетка</h3><p>Орел чи решка · ставка 10–300 🪙</p></div></header>
+            <p class="chat-game-rule">Команда для чату</p>
+            <code class="chat-game-example" data-command-preview="coin">Зіграти в монетку 100</code>
+            <label class="chat-game-stake-label" for="coin-chat-stake">Сума ставки</label>
+            <div class="chat-game-command-row">
+              <input id="coin-chat-stake" class="chat-game-stake" type="number" min="10" max="300" step="1" value="100" inputmode="numeric" data-chat-game-stake="coin" aria-label="Ставка для команди монетки">
+              <button class="chat-game-copy" type="button" data-copy-chat-command="coin">Копіювати команду</button>
+            </div>
+            <p class="chat-game-rule">Правила</p>
+            <p class="chat-game-description">Якщо відповіси на повідомлення гравця, прийняти або відхилити виклик зможе тільки він. Якщо напишеш команду просто в чат, прийняти її зможе будь-хто. Бот визначить переможця та зарахує виграш; комісія банку — 2%.</p>
+          </article>
+          <article class="chat-game-card">
+            <header class="chat-game-heading"><span class="chat-game-icon">🎲</span><div><h3>Кубик</h3><p>Дуель на двох кубиках · ставка 10–300 🪙</p></div></header>
+            <p class="chat-game-rule">Команда для чату</p>
+            <code class="chat-game-example" data-command-preview="dice">Зіграти в кубика 100</code>
+            <label class="chat-game-stake-label" for="dice-chat-stake">Сума ставки</label>
+            <div class="chat-game-command-row">
+              <input id="dice-chat-stake" class="chat-game-stake" type="number" min="10" max="300" step="1" value="100" inputmode="numeric" data-chat-game-stake="dice" aria-label="Ставка для команди кубика">
+              <button class="chat-game-copy" type="button" data-copy-chat-command="dice">Копіювати команду</button>
+            </div>
+            <p class="chat-game-rule">Правила</p>
+            <p class="chat-game-description">Після прийняття виклику бот кидає два кубики по черзі: перший — за того, хто запросив, другий — за того, хто прийняв. Бот оголошує переможця; комісія банку — 2%.</p>
+          </article>
+        </div>
+      </section>
+      <section id="view-profile" class="view">
+        <div class="game-header"><button class="back-btn" data-view="home">← Назад</button><h2>Профіль</h2></div>
+        <section class="profile-card" aria-label="Профіль гравця">
+          <div class="profile-avatar" id="profile-avatar">Г</div>
+          <div class="profile-details">
+            <h3 id="profile-name">Гравець</h3>
+            <p id="profile-username"></p>
+            <p>ID: <span id="profile-user-id">—</span></p>
+          </div>
+        </section>
+        <div class="profile-balance-card"><span>Баланс монет</span><strong>🪙 <span id="profile-balance">0</span></strong></div>
+      </section>
+    </main>
+    <div class="modal-overlay" id="room-invite-modal" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="room-invite-title">
+        <div class="modal-title" id="room-invite-title">Запрошення до гри в Дурак</div>
+        <div class="modal-body">
+          <div class="kv"><span class="k">Код кімнати</span><span class="v" id="room-invite-code"></span></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-primary btn-small" id="room-invite-close">Зрозуміло</button>
+        </div>
+      </div>
+    </div>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js?v=18"></script>
+    <script src="js/firestore-room-store.js?v=2"></script>
+  <script src="js/twa.js?v=17"></script>
+    <script src="js/game.js?v=22"></script>
+  <script src="js/router.js?v=18"></script>
+  <script src="js/cards.js?v=17"></script>
+  <script src="js/durak.js?v=18"></script>
+  <script src="js/battleship.js?v=21"></script>
+  <script src="js/tictactoe.js?v=21"></script>
+  <script src="js/store.js?v=18"></script>
+  <script src="js/durak-room.js?v=21"></script>
+  <script src="js/durak-multiplayer.js?v=19"></script>
+  <script src="js/main.js?v=19"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (new URLSearchParams(window.location.search).has('battleshipRoom')) {
+        window.openBattleshipScreen?.();
+      }
+    });
+  </script>
+  </div>
+</body>
+</html>

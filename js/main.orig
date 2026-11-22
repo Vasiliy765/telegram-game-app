@@ -1,0 +1,307 @@
+/* ==== Boot ==== */
+window.APP_STATE = {
+  balance: parseInt(localStorage.getItem('tga_balance') || '0', 10),
+};
+
+window.onViewShow = window.onViewShow || {};
+window.onViewShow.home = () => {};
+window.onViewShow.durak = () => {
+  if (window.Durak) window.Durak.init();
+};
+
+window.onViewShow.durak_room = () => {
+  if (window.DurakRoom) window.DurakRoom.init();
+};
+
+// Handle toggle button groups for durak settings
+document.addEventListener('DOMContentLoaded', () => {
+  // Home stake toggle
+  document.querySelectorAll('#home-stake-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#home-stake-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Sheet open/close
+  const sheetOverlay = $('#sheet-overlay');
+  const sheetPanel = $('#sheet-panel');
+  const homeCreateBtn = $('#home-create-table');
+  if (homeCreateBtn && sheetOverlay && sheetPanel) {
+    homeCreateBtn.addEventListener('click', () => {
+      sheetOverlay.classList.add('open');
+      sheetPanel.classList.add('open');
+    });
+  }
+  // Close sheet on overlay click
+  if (sheetOverlay) {
+    sheetOverlay.addEventListener('click', (e) => {
+      if (e.target.id === 'sheet-overlay') {
+        sheetOverlay.classList.remove('open');
+        sheetPanel.classList.remove('open');
+      }
+    });
+  }
+
+  // Sheet mode toggle
+  document.querySelectorAll('#sheet-mode-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#sheet-mode-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Sheet deck toggle
+  document.querySelectorAll('#sheet-deck-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#sheet-deck-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Sheet players toggle
+  document.querySelectorAll('#sheet-players-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#sheet-players-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      updateSheetBankDisplay();
+    });
+  });
+
+  // Sheet room type toggle
+  document.querySelectorAll('#sheet-roomtype-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#sheet-roomtype-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Sheet stake toggle
+  document.querySelectorAll('#sheet-stake-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#sheet-stake-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      updateSheetBankDisplay();
+    });
+  });
+
+  // Mode toggle
+  document.querySelectorAll('#durak-mode-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#durak-mode-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Deck toggle
+  document.querySelectorAll('#durak-deck-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#durak-deck-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Players toggle
+  document.querySelectorAll('#durak-players-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#durak-players-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      // Update bank display when players change
+      updateBankDisplay();
+    });
+  });
+
+  // Room type toggle
+  document.querySelectorAll('#durak-roomtype-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#durak-roomtype-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Stake toggle
+  document.querySelectorAll('#durak-stake-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#durak-stake-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      // Update bank display when stake changes
+      updateBankDisplay();
+    });
+  });
+});
+
+function updateBankDisplay() {
+  const stake = parseInt(document.querySelector('#durak-stake-toggle .toggle-btn.active')?.dataset.value || '10');
+  const players = parseInt(document.querySelector('#durak-players-toggle .toggle-btn.active')?.dataset.value || '4');
+  const bankValue = stake * players;
+  const bankEl = $('#durak-bank-display');
+  if (bankEl) {
+    bankEl.textContent = `🪙 ${stake} з кожного · банк 🪙 ${bankValue}`;
+  }
+}
+
+function updateSheetBankDisplay() {
+  const stake = parseInt(document.querySelector('#sheet-stake-toggle .toggle-btn.active')?.dataset.value || '10');
+  const players = parseInt(document.querySelector('#sheet-players-toggle .toggle-btn.active')?.dataset.value || '4');
+  const bankValue = stake * players;
+  const bankEl = $('#sheet-bank-display');
+  if (bankEl) {
+    bankEl.textContent = `🪙 ${stake} з кожного · банк 🪙 ${bankValue}`;
+  }
+}
+window.onViewShow.battleship = () => {
+  if (window.Battleship) window.Battleship.init();
+};
+window.onViewShow.tictactoe = () => {
+  if (window.TicTacToe) window.TicTacToe.init();
+};
+window.onViewShow.store = () => {
+  if (window.Store) {
+    window.Store.init();
+    const el = document.getElementById('balance');
+    if (el) el.textContent = window.APP_STATE.balance;
+  }
+};
+
+window.onViewShow.lobby = (params) => {
+  if (!window.Lobby) return;
+  const tg = window.Telegram.WebApp;
+  const startParam = tg.initDataUnparsed && tg.initDataUnparsed.start_param ? String(tg.initDataUnparsed.start_param) : '';
+  // якщо відкрито за посиланням (start_param) — це вхід гостем
+  if (startParam && !window.APP_STATE._linkHandled) {
+    window.APP_STATE._linkHandled = true;
+    window.Lobby.init(null, true, { mode: 'Дурак', deck: 36, players: 4, roomType: 'Приватна', stake: 10 });
+    return;
+  }
+  // інакше — господар створює стіл із поточними налаштуваннями з головного екрана
+  const stake = window.APP_STATE.homeStake || 10;
+  window.Lobby.init({ mode: 'Дурак', deck: 36, players: 4, roomType: 'Приватна', stake: parseInt(stake, 10) }, false, null);
+};
+
+window.onViewShow.durakroom = () => {
+  if (window.Lobby) window.Lobby.render();
+};
+
+window.onViewShow.duraktable = () => {
+  // Game table initialization would go here
+  if (window.Durak) window.Durak.render();
+};
+
+// initial balance
+const balEl = document.getElementById('balance');
+if (balEl) balEl.textContent = window.APP_STATE.balance;
+
+// Home: create table -> відкриває лобі як господар
+document.addEventListener('DOMContentLoaded', () => {
+  const createBtn = document.getElementById('home-create-table');
+  const stakeSel = document.getElementById('home-stake');
+  const testLinkBtn = document.getElementById('home-test-link');
+  if (createBtn) {
+    createBtn.addEventListener('click', () => {
+      window.TWA.haptic();
+      window.APP_STATE.homeStake = stakeSel ? stakeSel.value : '10';
+      showView('lobby');
+    });
+  }
+  if (testLinkBtn) {
+    testLinkBtn.addEventListener('click', () => {
+      window.TWA.haptic();
+      // імітація входу за посиланням (гость)
+      window.APP_STATE._linkHandled = false;
+      showView('lobby');
+      // onViewShow.lobby увидить start_param порожнім, тому підставимо вручну:
+      window.Lobby.init(null, true, { mode: 'Дурак', deck: 36, players: 4, roomType: 'Приватна', stake: 25 });
+    });
+  }
+});
+
+// Підтримка реального start_param Telegram при завантаженні сторінки
+document.addEventListener('DOMContentLoaded', () => {
+  const tg = window.Telegram.WebApp;
+  const startParam = tg.initDataUnparsed && tg.initDataUnparsed.start_param ? String(tg.initDataUnparsed.start_param) : '';
+  if (startParam) {
+    window.APP_STATE._linkHandled = false;
+    // затримка, щоб DOM готовий
+    setTimeout(() => { showView('lobby'); }, 100);
+  }
+});
+
+// Prevent pull-to-refresh / overscroll on mobile
+document.addEventListener('touchmove', (e) => {
+  if (e.target.closest('#views, .grid, .player-hand, .stars-row')) return;
+}, { passive: false });
+
+// Show Durak lobby when "Дурак" card clicked on main screen
+document.querySelectorAll('.game-card[data-view="durak"]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    window.TWA.haptic();
+    showView('durak');
+    // Initialize lobby state after view is shown
+    setTimeout(() => {
+      initDurakLobby();
+    }, 100);
+  });
+});
+
+// Initialize Durak lobby state
+function initDurakLobby() {
+  // Update settings display to default values
+  const defaultSettings = 'Простий · 36 · 👤 4 · 🪙 10';
+  document.querySelectorAll('.current-settings').forEach(el => {
+    if (el) el.textContent = defaultSettings;
+  });
+  
+  // Show lobby elements, hide game elements
+  const durakSection = document.getElementById('durak');
+  if (durakSection) {
+    // Show lobby elements (settings drawer, create slot)
+    const lobbyElements = durakSection.querySelectorAll('.settings-drawer, .durak-create-slot');
+    lobbyElements.forEach(el => el.style.display = 'block');
+    
+    // Hide game elements initially
+    const gameElements = durakSection.querySelectorAll('.durak-game, #durak-table');
+    gameElements.forEach(el => {
+      if (el) el.style.display = 'none';
+    });
+  }
+}
+
+// Handle create table in lobby
+document.addEventListener('DOMContentLoaded', () => {
+  const createTableBtn = document.getElementById('durak-create-table');
+  if (createTableBtn) {
+    createTableBtn.addEventListener('click', () => {
+      window.TWA.haptic();
+      // TODO: Show Nova gra popup (Screen 2)
+      // For now, just alert
+      window.TWA.toast('Налаштування стола відкривається (demo)');
+    });
+  }
+  
+  // Sheet open/close for main screen (old functionality)
+  const sheetOverlay = $('#sheet-overlay');
+  const sheetPanel = $('#sheet-panel');
+  const homeCreateBtn = $('#home-create-table');
+  if (homeCreateBtn && sheetOverlay && sheetPanel) {
+    homeCreateBtn.addEventListener('click', () => {
+      sheetOverlay.classList.add('open');
+      sheetPanel.classList.add('open');
+    });
+  }
+  // Close sheet on overlay click
+  if (sheetOverlay) {
+    sheetOverlay.addEventListener('click', (e) => {
+      if (e.target.id === 'sheet-overlay') {
+        sheetOverlay.classList.remove('open');
+        sheetPanel.classList.remove('open');
+      }
+    });
+  }
+  // Sheet mode toggle
+  document.querySelectorAll('#sheet-mode-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#sheet-mode-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+});

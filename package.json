@@ -1,0 +1,18 @@
+{
+  "name": "telegram-game-app-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Telegram bot for coin balances and group games",
+  "main": "bot.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "firebase-admin": "^13.5.0",
+    "node-telegram-bot-api": "^2.4.1"
+  }
+}

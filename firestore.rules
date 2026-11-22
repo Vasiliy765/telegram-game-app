@@ -1,0 +1,105 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function hasDurakSeat(room, uid) {
+      let seats = room.get('seats', {});
+      return seats.get('0', {}).get('id', '') == uid ||
+        seats.get('1', {}).get('id', '') == uid ||
+        seats.get('2', {}).get('id', '') == uid ||
+        seats.get('3', {}).get('id', '') == uid ||
+        seats.get('4', {}).get('id', '') == uid ||
+        seats.get('5', {}).get('id', '') == uid;
+    }
+
+    function validDurakJoin() {
+      let oldMeta = resource.data.get('meta', {});
+      let newMeta = request.resource.data.get('meta', {});
+      let oldMembers = oldMeta.get('members', {});
+      let newMembers = newMeta.get('members', {});
+      let oldSeats = resource.data.get('seats', {});
+      let newSeats = request.resource.data.get('seats', {});
+      return oldMeta.get('status', '') == 'waiting' &&
+        oldMembers.get(request.auth.uid, false) != true &&
+        newMembers.get(request.auth.uid, false) == true &&
+        newMembers.diff(oldMembers).affectedKeys().hasOnly([request.auth.uid]) &&
+        !hasDurakSeat(resource.data, request.auth.uid) &&
+        hasDurakSeat(request.resource.data, request.auth.uid) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['meta', 'seats']) &&
+        newMeta.diff(oldMeta).affectedKeys().hasOnly(['members']) &&
+        newSeats.diff(oldSeats).affectedKeys().size() == 1 &&
+        newSeats.keys().size() <= newMeta.get('settings', {}).get('players', 2);
+    }
+
+    match /players/{uid} {
+      allow get, list: if signedIn();
+      allow create, update: if signedIn() &&
+        request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly([
+          'telegramId', 'username', 'name', 'photoUrl', 'balance', 'updatedAt'
+        ]) &&
+        request.resource.data.balance is int &&
+        request.resource.data.balance >= 0 &&
+        request.resource.data.updatedAt is int &&
+        request.resource.data.telegramId is string &&
+        request.resource.data.username is string &&
+        request.resource.data.name is string &&
+        request.resource.data.photoUrl is string;
+      allow delete: if false;
+    }
+
+    match /durakRooms/{roomId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() &&
+        request.resource.data.get('meta', {}).get('hostId', '') == request.auth.uid &&
+        request.resource.data.get('meta', {}).get('members', {}).get(request.auth.uid, false) == true;
+      allow update: if signedIn() &&
+        (resource.data.get('meta', {}).get('hostId', '') == request.auth.uid ||
+         resource.data.get('meta', {}).get('members', {}).get(request.auth.uid, false) == true ||
+         validDurakJoin());
+      allow delete: if signedIn() &&
+        resource.data.get('meta', {}).get('hostId', '') == request.auth.uid;
+    }
+
+    match /tictactoeRooms/{roomId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() &&
+        request.resource.data.get('meta', {}).get('hostId', '') == request.auth.uid &&
+        request.resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == request.auth.uid;
+      allow update: if signedIn() &&
+        (resource.data.get('meta', {}).get('hostId', '') == request.auth.uid ||
+         resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == request.auth.uid ||
+         (resource.data.get('meta', {}).get('status', '') == 'waiting' &&
+          resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == '' &&
+          request.resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == request.auth.uid &&
+          request.resource.data.get('players', {}).keys().size() <= 2 &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['players'])));
+      allow delete: if signedIn() &&
+        resource.data.get('meta', {}).get('hostId', '') == request.auth.uid;
+    }
+
+    match /battleshipRooms/{roomId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() &&
+        request.resource.data.get('meta', {}).get('hostId', '') == request.auth.uid &&
+        request.resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == request.auth.uid;
+      allow update: if signedIn() &&
+        (resource.data.get('meta', {}).get('hostId', '') == request.auth.uid ||
+         resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == request.auth.uid ||
+         (resource.data.get('meta', {}).get('status', '') == 'waiting' &&
+          resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == '' &&
+          request.resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == request.auth.uid &&
+          request.resource.data.get('players', {}).keys().size() <= 2 &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['players'])));
+      allow delete: if signedIn() &&
+        resource.data.get('meta', {}).get('hostId', '') == request.auth.uid;
+    }
+  }
+}
