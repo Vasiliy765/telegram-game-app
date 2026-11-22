@@ -34,6 +34,19 @@ const DIAMOND_PACKAGES = Object.freeze({
   '300': { diamonds: 300, stars: 270 },
 });
 const DIAMONDS_ADMIN_ID = '7784142934';
+const ADMIN_ID = '7784142934';
+const supportRequests = new Map();
+const pendingBroadcasts = new Map();
+const BOT_COMMANDS = [
+  { command: 'start', description: 'Відкрити ШПИГУН' },
+  { command: 'play', description: 'Запустити Mini App' },
+  { command: 'balance', description: 'Мій баланс (🪙 та 💎)' },
+  { command: 'zp', description: 'Отримати зарплату агента' },
+  { command: 'top', description: 'Рейтинг гравців' },
+  { command: 'shop', description: 'Магазин діамантів 💎' },
+  { command: 'help', description: 'Усі команди та правила' },
+  { command: 'support', description: 'Зв’язатися з адміном' },
+];
 
 function sendMessage(chatId, text, options = {}) {
   return bot.api.sendMessage({ chat_id: chatId, text, ...options });
@@ -121,14 +134,131 @@ async function sendStart(chatId, chatType, user) {
   );
 }
 
+async function saveGroupChat(chat) {
+  if (!isGroup(chat)) return;
+  await db.collection('chats').doc(String(chat.id)).set({
+    id: chat.id,
+    title: chat.title || chat.username || `Група ${chat.id}`,
+    type: chat.type,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+async function sendPlay(chatId, chatType) {
+  const keyboard = chatType === 'private'
+    ? { text: '🎮 Запустити ШПИГУН', web_app: { url: WEBAPP_URL } }
+    : { text: '🎮 Запустити ШПИГУН', url: WEBAPP_URL };
+  await sendMessage(chatId, 'Відкрий Mini App і обери гру:', {
+    reply_markup: { inline_keyboard: [[keyboard]] },
+  });
+}
+
 async function sendBalance(chatId, user) {
   const userRef = await ensureUser(user);
   const snapshot = await userRef.get();
   await sendMessage(
     chatId,
-    `🪙 Баланс ${escapeHtml(displayName(user))}: <b>${formatCoins(snapshot.get('balance'))}</b> монет.`,
+    `🪙 Баланс ${escapeHtml(displayName(user))}: <b>${formatCoins(snapshot.get('balance') || 0)}</b> монет\n`
+      + `💎 Діаманти: <b>${formatCoins(snapshot.get('diamonds') || 0)}</b>`,
     { parse_mode: 'HTML' },
   );
+}
+
+async function sendHelp(chatId) {
+  await sendMessage(
+    chatId,
+    '<b>🎯 Команди ШПИГУН</b>\n'
+      + '/start — відкрити бота\n/play — запустити Mini App\n/balance — баланс 🪙 та 💎\n'
+      + '/zp — зарплата агента раз на 3 години\n/top — рейтинг гравців\n/shop — магазин діамантів\n'
+      + '/support — написати адміністратору\n\n'
+      + 'У групі: «Зіграти в монетку &lt;ставка&gt;» або «Зіграти в кубика &lt;ставка&gt;» '
+      + '(10–300 🪙).',
+    { parse_mode: 'HTML' },
+  );
+}
+
+async function startSupport(chatId, user) {
+  supportRequests.set(telegramId(user), { startedAt: Date.now() });
+  await sendMessage(
+    chatId,
+    '✍️ Опишіть вашу проблему або запитання одним повідомленням (можна додати фото). '
+      + 'Адміністратор відповість вам найближчим часом.',
+    { reply_markup: { inline_keyboard: [[{ text: 'Скасувати', callback_data: 'support:cancel' }]] } },
+  );
+}
+
+function supportHeader(user) {
+  const name = displayName(user).replace(/[\r\n]/g, ' ');
+  const username = user.username ? `@${user.username.replace(/[\r\n]/g, '')}` : '(без username)';
+  return `📩 Звернення до підтримки\nІм’я: ${name}\nUsername: ${username}\nID: ${telegramId(user)}`;
+}
+
+async function forwardSupportRequest(message) {
+  const header = supportHeader(message.from);
+  const chatId = Number(ADMIN_ID);
+  if (message.text) {
+    await sendMessage(chatId, `${header}\n\n${message.text}`);
+  } else if (message.photo?.length) {
+    const photoId = message.photo[message.photo.length - 1].file_id;
+    await bot.api.sendPhoto({
+      chat_id: chatId,
+      photo: photoId,
+      caption: `${header}${message.caption ? `\n\n${message.caption}` : ''}`.slice(0, 1024),
+    });
+  } else if (message.video) {
+    await bot.api.sendVideo({
+      chat_id: chatId,
+      video: message.video.file_id,
+      caption: `${header}${message.caption ? `\n\n${message.caption}` : ''}`.slice(0, 1024),
+    });
+  } else {
+    const headerMessage = await sendMessage(chatId, header);
+    await bot.api.copyMessage({
+      chat_id: chatId,
+      from_chat_id: message.chat.id,
+      message_id: message.message_id,
+      reply_parameters: { message_id: headerMessage.message_id },
+    });
+  }
+  supportRequests.delete(telegramId(message.from));
+  await sendMessage(message.chat.id, '✅ Ваше звернення надіслано адміністратору.');
+}
+
+function findSupportUserId(message) {
+  let replied = message.reply_to_message;
+  for (let depth = 0; replied && depth < 3; depth += 1) {
+    const content = `${replied.text || ''}\n${replied.caption || ''}`;
+    const match = content.match(/(?:^|\n)ID:\s*(\d{1,20})(?:\n|$)/);
+    if (match && replied.from?.is_bot) return match[1];
+    replied = replied.reply_to_message;
+  }
+  return null;
+}
+
+async function sendAdminReply(message, userId) {
+  const prefix = '💬 Відповідь адміністратора:';
+  if (message.text) {
+    await sendMessage(userId, `${prefix}\n\n${message.text}`);
+  } else if (message.photo?.length) {
+    await bot.api.sendPhoto({
+      chat_id: userId,
+      photo: message.photo[message.photo.length - 1].file_id,
+      caption: `${prefix}${message.caption ? `\n\n${message.caption}` : ''}`.slice(0, 1024),
+    });
+  } else if (message.video) {
+    await bot.api.sendVideo({
+      chat_id: userId,
+      video: message.video.file_id,
+      caption: `${prefix}${message.caption ? `\n\n${message.caption}` : ''}`.slice(0, 1024),
+    });
+  } else {
+    await sendMessage(userId, prefix);
+    await bot.api.copyMessage({
+      chat_id: userId,
+      from_chat_id: message.chat.id,
+      message_id: message.message_id,
+    });
+  }
 }
 
 async function sendSalary(chatId, user) {
@@ -488,6 +618,111 @@ async function sendTop(chatId) {
   });
 }
 
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function broadcastToChat(chatId, content) {
+  if (content.kind === 'text') {
+    await sendMessage(chatId, content.text);
+    return;
+  }
+  await bot.api.copyMessage({
+    chat_id: chatId,
+    from_chat_id: content.chatId,
+    message_id: content.messageId,
+  });
+}
+
+async function prepareBroadcast(message, text) {
+  const repliedMessage = message.reply_to_message;
+  const content = repliedMessage
+    ? { kind: 'copy', chatId: message.chat.id, messageId: repliedMessage.message_id }
+    : { kind: 'text', text };
+  const broadcastId = crypto.randomUUID();
+  pendingBroadcasts.set(broadcastId, { content, adminChatId: message.chat.id });
+  const previewText = content.kind === 'text'
+    ? `📣 <b>Попередній перегляд розсилки</b>\n\n${escapeHtml(content.text)}`
+    : `📣 <b>Попередній перегляд розсилки</b>\nВміст скопійовано з повідомлення адміністратора.`;
+  let preview;
+  try {
+    preview = await sendMessage(message.chat.id, previewText, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '✅ Надіслати всім', callback_data: `broadcast:send:${broadcastId}` },
+          { text: '❌ Скасувати', callback_data: `broadcast:cancel:${broadcastId}` },
+        ]],
+      },
+    });
+    if (repliedMessage) {
+      await bot.api.copyMessage({
+        chat_id: message.chat.id,
+        from_chat_id: message.chat.id,
+        message_id: repliedMessage.message_id,
+        reply_parameters: { message_id: preview.message_id },
+      });
+    }
+  } catch (error) {
+    pendingBroadcasts.delete(broadcastId);
+    throw error;
+  }
+}
+
+async function runBroadcast(broadcastId, callbackContext) {
+  const callbackQuery = callbackContext.callbackQuery;
+  if (String(callbackQuery.from.id) !== ADMIN_ID) {
+    await answerCallbackQuery(callbackContext, { text: 'Команда доступна лише адміністратору.', show_alert: true });
+    return;
+  }
+  const pending = pendingBroadcasts.get(broadcastId);
+  if (!pending) {
+    await answerCallbackQuery(callbackContext, { text: 'Цю розсилку вже скасовано або надіслано.' });
+    return;
+  }
+
+  pendingBroadcasts.delete(broadcastId);
+  await answerCallbackQuery(callbackContext, { text: 'Розсилку розпочато.' });
+  try {
+    await editMessageReplyMarkup(callbackContext, { inline_keyboard: [] });
+  } catch (error) {
+    console.error('Unable to disable broadcast confirmation buttons:', error);
+  }
+
+  const [userSnapshot, chatSnapshot] = await Promise.all([
+    users.get(),
+    db.collection('chats').get(),
+  ]);
+  const targets = [
+    ...userSnapshot.docs.map((document) => ({ id: document.id, kind: 'private' })),
+    ...chatSnapshot.docs.map((document) => ({ id: document.id, kind: 'group' })),
+  ];
+  let privateDelivered = 0;
+  let groupDelivered = 0;
+  let failed = 0;
+
+  for (const [index, target] of targets.entries()) {
+    try {
+      await broadcastToChat(target.id, pending.content);
+      if (target.kind === 'private') privateDelivered += 1;
+      else groupDelivered += 1;
+    } catch (error) {
+      failed += 1;
+      if (error?.error_code !== 403) {
+        console.error(`Broadcast delivery failed for chat ${target.id}:`, error);
+      }
+    }
+    if (index < targets.length - 1) await sleep(50);
+  }
+
+  await sendMessage(
+    pending.adminChatId,
+    `✅ Розсилку завершено.\nОсобисті чати: <b>${privateDelivered}</b>\n`
+      + `Групи: <b>${groupDelivered}</b>\nПомилок доставки: <b>${failed}</b>`,
+    { parse_mode: 'HTML' },
+  );
+}
+
 function challengeKeyboard(challengeId, isTargeted) {
   const buttons = [
     { text: '✅ Прийняти', callback_data: `accept:${challengeId}` },
@@ -801,15 +1036,61 @@ bot.on('message', async (context) => {
   const message = context.message;
 
   try {
+    if (isGroup(message.chat)) {
+      try {
+        await saveGroupChat(message.chat);
+      } catch (error) {
+        console.error('Failed to save active group chat:', error);
+      }
+    }
     if (message.successful_payment) {
       await processSuccessfulDiamondPayment(message);
       return;
     }
-    if (!message.text) return;
 
-    const adminCommand = message.text.trim().match(/^видати діаманти(?:\s+(.+))?$/i);
+    const senderId = telegramId(message.from);
+    if (senderId === ADMIN_ID && message.reply_to_message) {
+      const supportUserId = findSupportUserId(message);
+      if (supportUserId) {
+        await sendAdminReply(message, supportUserId);
+        await sendMessage(message.chat.id, '✅ Відповідь надіслано користувачу.');
+        return;
+      }
+    }
+
+    const broadcastCommand = message.text?.trim().match(/^\/broadcast(?:@\w+)?(?:\s+([\s\S]*))?$/i);
+    if (broadcastCommand) {
+      if (senderId !== ADMIN_ID) {
+        await sendMessage(message.chat.id, 'Команда доступна лише адміністратору.');
+        return;
+      }
+      const broadcastText = broadcastCommand[1]?.trim();
+      if (!message.reply_to_message && !broadcastText) {
+        await sendMessage(message.chat.id, 'Використання: /broadcast <текст> або відповіддю на повідомлення.');
+        return;
+      }
+      await prepareBroadcast(message, broadcastText || '');
+      return;
+    }
+
+    if (message.text?.trim().match(/^\/support(?:@\w+)?(?:\s|$)/i)) {
+      await startSupport(message.chat.id, message.from);
+      return;
+    }
+    if (message.text?.trim().match(/^\/cancel(?:@\w+)?(?:\s|$)/i)
+        && supportRequests.has(senderId)) {
+      supportRequests.delete(senderId);
+      await sendMessage(message.chat.id, 'Звернення скасовано.');
+      return;
+    }
+    if (supportRequests.has(senderId)) {
+      await forwardSupportRequest(message);
+      return;
+    }
+
+    const adminCommand = message.text?.trim().match(/^видати діаманти(?:\s+(.+))?$/i);
     if (adminCommand) {
-      if (telegramId(message.from) !== DIAMONDS_ADMIN_ID) {
+      if (senderId !== DIAMONDS_ADMIN_ID) {
         await sendMessage(message.chat.id, 'Команда доступна лише адміністратору.');
         return;
       }
@@ -849,21 +1130,39 @@ bot.on('message', async (context) => {
       return;
     }
 
-    const command = message.text.trim().match(/^\/(start|balance|top)(?:@\w+)?(?:\s|$)/i);
+    const command = message.text?.trim().match(/^\/([a-z]+)(?:@\w+)?(?:\s+([\s\S]*))?$/i);
     if (command) {
       switch (command[1].toLowerCase()) {
         case 'start':
           await sendStart(message.chat.id, message.chat.type, message.from);
           return;
+        case 'play':
+          await sendPlay(message.chat.id, message.chat.type);
+          return;
         case 'balance':
           await sendBalance(message.chat.id, message.from);
+          return;
+        case 'zp':
+          await sendSalary(message.chat.id, message.from);
           return;
         case 'top':
           await sendTop(message.chat.id);
           return;
+        case 'shop':
+          await sendDiamondsShop(message.chat.id, message.from);
+          return;
+        case 'help':
+          await sendHelp(message.chat.id);
+          return;
+        case 'support':
+          await startSupport(message.chat.id, message.from);
+          return;
+        default:
+          break;
       }
     }
 
+    if (!message.text) return;
     if (/^баланс$/i.test(message.text.trim())) {
       await sendBalance(message.chat.id, message.from);
       return;
@@ -923,6 +1222,52 @@ bot.on('pre_checkout_query', async (context) => {
 
 bot.on('callback_query', async (context) => {
   const query = context.callbackQuery;
+  const callbackMessage = query?.message;
+  if (callbackMessage && isGroup(callbackMessage.chat)) {
+    try {
+      await saveGroupChat(callbackMessage.chat);
+    } catch (error) {
+      console.error('Failed to save active group chat from callback:', error);
+    }
+  }
+  if (query?.data === 'support:cancel') {
+    if (supportRequests.delete(telegramId(context.from))) {
+      await answerCallbackQuery(context, { text: 'Звернення скасовано.' });
+      if (callbackMessage) await sendMessage(callbackMessage.chat.id, 'Звернення скасовано.');
+    } else {
+      await answerCallbackQuery(context, { text: 'Немає активного звернення.' });
+    }
+    return;
+  }
+  const broadcastAction = query?.data?.match(/^broadcast:(send|cancel):([a-f0-9-]{36})$/i);
+  if (broadcastAction) {
+    if (String(context.from.id) !== ADMIN_ID) {
+      await answerCallbackQuery(context, { text: 'Команда доступна лише адміністратору.', show_alert: true });
+      return;
+    }
+    if (broadcastAction[1] === 'cancel') {
+      const pending = pendingBroadcasts.get(broadcastAction[2]);
+      pendingBroadcasts.delete(broadcastAction[2]);
+      await answerCallbackQuery(context, { text: 'Розсилку скасовано.' });
+      if (pending) {
+        try {
+          await editMessageReplyMarkup(context, { inline_keyboard: [] });
+        } catch (error) {
+          console.error('Unable to disable cancelled broadcast buttons:', error);
+        }
+        await sendMessage(pending.adminChatId, 'Розсилку скасовано.');
+      }
+    } else {
+      try {
+        await runBroadcast(broadcastAction[2], context);
+      } catch (error) {
+        console.error('Broadcast failed:', error);
+        await sendMessage(callbackMessage?.chat.id || ADMIN_ID, 'Не вдалося завершити розсилку. Перевірте журнал бота.');
+      }
+    }
+    return;
+  }
+
   const [action, challengeId] = (query?.data || '').split(':');
   if (!challengeId || !['accept', 'decline'].includes(action)) return;
 
@@ -988,6 +1333,21 @@ bot.catch((error) => {
 function sendJson(response, statusCode, data) {
   response.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
   response.end(JSON.stringify(data));
+}
+
+async function configureCommandMenus() {
+  await bot.api.setMyCommands({ commands: BOT_COMMANDS });
+  try {
+    await bot.api.setMyCommands({
+      commands: [
+        ...BOT_COMMANDS,
+        { command: 'broadcast', description: 'Розсилка в усі чати та особисті' },
+      ],
+      scope: { type: 'chat', chat_id: Number(ADMIN_ID) },
+    });
+  } catch (error) {
+    console.error('Unable to set the administrator command menu:', error);
+  }
 }
 
 async function readJsonBody(request) {
@@ -1091,6 +1451,7 @@ server.listen(process.env.PORT || 3000);
 async function startBot() {
   await bot.api.deleteWebhook({ drop_pending_updates: true });
   await bot.init();
+  await configureCommandMenus();
 
   const polling = run(bot, {
     exitOnError: true,
