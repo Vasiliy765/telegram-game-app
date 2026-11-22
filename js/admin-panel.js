@@ -14,16 +14,25 @@
     ].some((id) => id != null && String(id).trim() === ADMIN_ID);
   };
 
-  function init() {
-    if (!isAdmin() || document.getElementById('sa-adm-btn')) return;
+  function getFirestore() {
+    const firebase = window.firebase;
+    const config = window.FIREBASE_CONFIG;
+    if (!firebase?.firestore || !config?.projectId) return null;
 
-    const btn = document.createElement('button');
-    btn.id = 'sa-adm-btn';
-    btn.textContent = '🛡️ Адмін-панель';
-    btn.style.cssText = 'position:fixed;bottom:78px;right:14px;z-index:99990;background:#dc2626;color:#fff;border:none;border-radius:99px;padding:13px 18px;font-size:15px;font-weight:800;box-shadow:0 6px 20px rgba(220,38,38,.45);cursor:pointer';
-    document.body.appendChild(btn);
+    const app = firebase.apps.find(({ name }) => name === '[DEFAULT]')
+      || firebase.initializeApp(config);
+    if (app.options.projectId !== config.projectId) {
+      throw new Error('Firebase is initialized for a different project.');
+    }
+    return app.firestore();
+  }
+
+  function init() {
+    if (!isAdmin()) return;
     const profileBtn = document.getElementById('sa-profile-adm-btn');
+    if (!profileBtn || profileBtn.dataset.adminPanelBound === 'true') return;
     if (profileBtn) profileBtn.hidden = false;
+    profileBtn.dataset.adminPanelBound = 'true';
 
     const ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(10,10,14,.88);display:none;align-items:center;justify-content:center;padding:16px';
@@ -51,13 +60,13 @@
     };
 
     async function chips() {
-      const db = window.firebase?.firestore?.();
-      if (!db) {
-        st.textContent = 'Firestore недоступний.';
-        return;
-      }
       const w = ov.querySelector('#sa-chips'); w.innerHTML = '';
       try {
+        const db = getFirestore();
+        if (!db) {
+          st.textContent = 'Firestore недоступний.';
+          return;
+        }
         const snap = await db.collection('users').limit(6).get();
         snap.forEach(d => {
           const u = d.data(), c = document.createElement('button');
@@ -73,20 +82,21 @@
     }
 
     async function find() {
-      const raw = ov.querySelector('#sa-q').value.trim(), db = window.firebase?.firestore?.();
+      const raw = ov.querySelector('#sa-q').value.trim();
       if (!raw) {
         st.textContent = 'Введіть @username або ID';
         sel = null;
         draw();
         return;
       }
-      if (!db) {
-        st.textContent = 'Firestore недоступний.';
-        return;
-      }
       sel = null;
       st.textContent = 'Пошук...';
       try {
+        const db = getFirestore();
+        if (!db) {
+          st.textContent = 'Firestore недоступний.';
+          return;
+        }
         if (/^\d+$/.test(raw)) {
           const d = await db.collection('users').doc(raw).get();
           if (d.exists) {
@@ -122,13 +132,9 @@
     }
 
     async function apply(field, icon) {
-      const db = window.firebase?.firestore?.(), val = Number(ov.querySelector('#sa-amt').value);
+      const val = Number(ov.querySelector('#sa-amt').value);
       if (!sel) {
         st.textContent = 'Спочатку знайдіть гравця.';
-        return;
-      }
-      if (!db) {
-        st.textContent = 'Firestore недоступний.';
         return;
       }
       if (!Number.isSafeInteger(val) || val === 0) {
@@ -137,6 +143,11 @@
       }
       const next = Math.max(0, Number(sel[field] || 0) + val);
       try {
+        const db = getFirestore();
+        if (!db) {
+          st.textContent = 'Firestore недоступний.';
+          return;
+        }
         await db.collection('users').doc(String(sel.id)).set({ [field]: next }, { merge: true });
         sel[field] = next;
         ov.querySelector('#sa-amt').value = '';
@@ -149,8 +160,7 @@
     }
 
     const openPanel = () => { ov.style.display = 'flex'; void chips(); };
-    btn.onclick = openPanel;
-    if (profileBtn) profileBtn.onclick = openPanel;
+    profileBtn.onclick = openPanel;
     ov.querySelector('#sa-x').onclick = () => ov.style.display = 'none';
     ov.querySelector('#sa-s').onclick = find;
     ov.querySelector('#sa-bc').onclick = () => apply('balance', '🪙');

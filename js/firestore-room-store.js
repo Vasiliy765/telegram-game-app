@@ -235,8 +235,10 @@ window.FirebaseRoomStore = (() => {
       if (!update?.room) throw new Error(update?.error || 'До кімнати більше не можна приєднатися.');
 
       const balance = userSnapshot.get('balance');
-      if (!Number.isSafeInteger(balance) || (direction < 0 && balance < stake) ||
-          !Number.isSafeInteger(balance + direction * stake)) {
+      if (!Number.isFinite(balance) || balance < 0 || balance > Number.MAX_SAFE_INTEGER ||
+          (direction < 0 && balance < stake) ||
+          !Number.isFinite(balance + direction * stake) || balance + direction * stake < 0 ||
+          balance + direction * stake > Number.MAX_SAFE_INTEGER) {
         throw new Error('Недостатньо монет для ставки 🪙');
       }
 

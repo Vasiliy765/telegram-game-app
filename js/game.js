@@ -6,9 +6,14 @@
   const BALANCE_KEY = 'tga_balance';
   const DIAMONDS_API_URL = 'https://telegram-game-app.onrender.com';
   const readBalance = () => {
-    const value = Number.parseInt(localStorage.getItem(BALANCE_KEY) || '0', 10);
-    return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+    const value = Number(localStorage.getItem(BALANCE_KEY) || '0');
+    return isValidCurrencyBalance(value) ? value : 0;
   };
+  const isValidCurrencyBalance = (value) =>
+    Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER;
+  const formatCurrency = (value) => new Intl.NumberFormat('uk-UA', {
+    maximumFractionDigits: 2,
+  }).format(value);
   let anonymousAuthPromise = null;
   let playerDocumentRef = null;
   let pendingBalanceDelta = 0;
@@ -291,8 +296,9 @@
     const entries = snapshot.docs
       .map((document) => {
         const player = document.data();
-        if (!player || !Number.isSafeInteger(Number(player.balance)) || Number(player.balance) < 0) return null;
-        return { ...player, firebaseId: document.id, balance: Number(player.balance) };
+        const balance = Number(player?.balance);
+        if (!isValidCurrencyBalance(balance)) return null;
+        return { ...player, firebaseId: document.id, balance };
       })
       .filter(Boolean);
     entries.sort((a, b) => b.balance - a.balance);
@@ -368,7 +374,7 @@
       try {
         const snapshot = await playerDocumentRef.get();
         const savedBalance = snapshot.get('balance');
-        if (snapshot.exists && Number.isSafeInteger(savedBalance) && savedBalance >= 0) {
+        if (snapshot.exists && isValidCurrencyBalance(savedBalance)) {
           applyRemoteBalance(savedBalance, 'firestore-recovery');
         }
       } catch (recoveryError) {
@@ -400,7 +406,7 @@
     userDocumentRef.onSnapshot((snapshot) => {
       if (!snapshot.exists) return;
       const savedBalance = snapshot.get('balance');
-      if (!Number.isSafeInteger(savedBalance) || savedBalance < 0) {
+      if (!isValidCurrencyBalance(savedBalance)) {
         console.error(`Invalid balance in Firestore user document ${userId}.`);
       } else {
         applyRemoteBalance(savedBalance, 'firestore');
@@ -409,7 +415,7 @@
       const savedDiamonds = snapshot.get('diamonds');
       if (savedDiamonds == null) {
         applyRemoteDiamonds(0);
-      } else if (Number.isSafeInteger(savedDiamonds) && savedDiamonds >= 0) {
+      } else if (isValidCurrencyBalance(savedDiamonds)) {
         applyRemoteDiamonds(savedDiamonds);
       } else {
         console.error(`Invalid diamonds balance in Firestore user document ${userId}.`);
@@ -451,12 +457,12 @@
   }
 
   function renderBalance() {
-    const balance = String(window.APP_STATE.balance);
+    const balance = formatCurrency(window.APP_STATE.balance);
     ['balance', 'store-balance', 'profile-balance', 'durak-balance'].forEach((id) => {
       const element = document.getElementById(id);
       if (element) element.textContent = balance;
     });
-    const diamonds = String(window.APP_STATE.diamonds);
+    const diamonds = formatCurrency(window.APP_STATE.diamonds);
     ['header-diamonds', 'profile-diamonds'].forEach((id) => {
       const element = document.getElementById(id);
       if (element) element.textContent = diamonds;
@@ -574,7 +580,7 @@
 
     const balance = Number(window.APP_STATE?.balance);
     const nextBalance = balance + delta;
-    if (!Number.isSafeInteger(nextBalance) || nextBalance < 0) return false;
+    if (!isValidCurrencyBalance(nextBalance)) return false;
 
     localStorage.setItem(BALANCE_KEY, String(nextBalance));
     window.APP_STATE.balance = nextBalance;

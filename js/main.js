@@ -1,7 +1,9 @@
 /* ==== Boot ==== */
-window.APP_STATE = {
-  balance: Math.max(0, Number.parseInt(localStorage.getItem('tga_balance') || '0', 10) || 0),
-};
+window.APP_STATE = window.APP_STATE || {};
+if (!Number.isFinite(window.APP_STATE.balance) || window.APP_STATE.balance < 0) {
+  const savedBalance = Number(localStorage.getItem('tga_balance') || '0');
+  window.APP_STATE.balance = Number.isFinite(savedBalance) && savedBalance >= 0 ? savedBalance : 0;
+}
 
 window.onViewShow = window.onViewShow || {};
 window.onViewShow.home = () => {};
