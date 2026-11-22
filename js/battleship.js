@@ -5,6 +5,7 @@ window.Battleship = (() => {
   const LETTERS = ['А','Б','В','Г','Д','Е','Ж','З','И','К'];
   const root = () => document.getElementById('screen-battleship') || document.getElementById('battleship-game');
   let state = {};
+  let publicRoomsUnmount = null;
 
   const emptyGrid = () => Array(N*N).fill(0);
   const idx = (r,c) => r*N+c;
@@ -94,6 +95,7 @@ window.Battleship = (() => {
   }
 
   function renderMenu(){
+    publicRoomsUnmount?.();
     root().innerHTML=`<div class="bs-screen bs-menu">
       <header class="bs-menu-header"><button class="bs-back" id="bs-back" type="button">← Назад</button></header>
       <div class="bs-menu-title"><h1>Морський бій</h1><p>Класика 10×10 — потопи ворожий флот</p></div>
@@ -103,6 +105,7 @@ window.Battleship = (() => {
         <button class="bs-mode-card active" data-mode="bot" type="button"><span class="bs-mode-icon">⌘</span><span><strong>Бій проти бота</strong><small>Швидка гра проти розумного ШІ</small></span><b>›</b></button>
         <button class="bs-mode-card" data-mode="local" type="button"><span class="bs-mode-icon">▦</span><span><strong>Локальна дуель</strong><small>Двоє гравців на одному пристрої</small></span><b>›</b></button>
       </div>
+      <section class="public-rooms-section"><h2>Відкриті столи</h2><div class="public-room-list" id="bs-open-room-list"><p class="public-room-empty">Завантаження відкритих столів…</p></div></section>
       <div class="bs-drawer-overlay" id="bs-stake-overlay"></div>
       <aside class="bs-stake-drawer" id="bs-stake-drawer">
         <div class="bs-drawer-head"><strong>Онлайн 1 на 1</strong><button id="bs-drawer-close" type="button">×</button></div>
@@ -111,6 +114,10 @@ window.Battleship = (() => {
         <button class="bs-create-room" id="bs-create-room" type="button">Створити стіл</button>
       </aside>
     </div>`;
+    publicRoomsUnmount=window.PublicRooms?.mount(
+      root().querySelector('#bs-open-room-list'),
+      (game,roomCode)=>window.openPublicRoom(game,roomCode)
+    )||null;
     document.getElementById('bs-back').onclick=leave;
     root().querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{
       state.mode=b.dataset.mode;
@@ -191,8 +198,8 @@ window.Battleship = (() => {
     state.online={roomCode,isHost:true,uid:backend?.uid||'local-host',db:backend?.db||null,
       localTest:!backend,unsubscribe:null,roomData:null};
     state.mode='online';
-    const host={id:state.online.uid,name:playerName(),...playerProfileFields(),avatar:(playerName()[0]||'Г').toUpperCase(),ready:false,fleet:null};
-    const room={meta:{stake:state.stake,status:'waiting',hostId:host.id,createdAt:Date.now(),version:1,round:1},
+    const host={id:state.online.uid,name:playerName(),...playerProfileFields(),avatar:(playerName()[0]||'Г').toUpperCase(),ready:false,fleet:serializeFleet(randomFleet().ships)};
+    const room={meta:{stake:state.stake,bank:state.stake,status:'waiting',hostId:String(host.id),hostName:host.name,isPublic:true,createdAt:Date.now(),version:1,round:1},
       players:{[host.id]:host},turn:host.id,shots:{}};
     state.online.roomData=room;
     if(backend){
@@ -224,16 +231,14 @@ window.Battleship = (() => {
       const snapshot=await ref.once('value');
       const room=snapshot.val();
       if(!room||room.meta?.status==='finished')throw new Error('Кімнату не знайдено або гра завершена.');
-      const existing=room.players?.[backend.uid];
+      const profile=window.getCurrentPlayerProfile?.()||{};
+      const existing=Object.values(room.players||{}).find(player=>String(player.id)===String(backend.uid)||
+        (profile.telegramId&&player.telegramId===profile.telegramId));
       if(!existing){
         if(room.meta?.status!=='waiting')throw new Error('Бій уже розпочався.');
-        const occupied=Object.values(room.players||{}).length;
-        if(occupied>=2)throw new Error('У кімнаті вже є два гравці.');
-        await ref.child(`players/${backend.uid}`).set({
-          id:backend.uid,name:playerName(),...playerProfileFields(),avatar:(playerName()[0]||'Г').toUpperCase(),ready:false,fleet:null
-        });
       }
-      state.online={roomCode,isHost:room.meta?.hostId===backend.uid,uid:backend.uid,db:backend.db,
+      const uid=existing?.id||backend.uid;
+      state.online={roomCode,isHost:String(room.meta?.hostId)===String(uid),uid,joinPending:!existing,db:backend.db,
         localTest:false,unsubscribe:null,roomData:room};
       state.mode='online';state.stake=Number(room.meta?.stake)||10;
       state.screen='lobby';
@@ -254,8 +259,9 @@ window.Battleship = (() => {
       state.screen='lobby';state.wagerStarted=false;state.wagerId=null;state.payout=0;
     }
     state.online.roomData=room;
-    if(room.meta?.status==='battle'||room.meta?.status==='finished'){
+    if(room.meta?.status==='playing'||room.meta?.status==='battle'||room.meta?.status==='finished'){
       startOnlineBattle(room);
+      if(room.meta?.status==='playing'||room.meta?.status==='battle')scheduleOnlineBotTurn(room);
       return;
     }
     if(state.screen==='lobby')renderLobby();
@@ -265,60 +271,210 @@ window.Battleship = (() => {
     state.screen='lobby';
     const room=state.online.roomData||{};
     const players=Object.values(room.players||{});
-    const mine=players.find(player=>player.id===state.online.uid);
-    const other=players.find(player=>player.id!==state.online.uid);
+    const mine=players.find(player=>String(player.id)===String(state.online.uid));
+    const other=players.find(player=>String(player.id)!==String(state.online.uid));
     const inviteUrl=roomLink();
+    const isHost=String(state.online.uid)===String(room.meta?.hostId);
+    const joinAvailable=players.length<2&&room.meta?.status==='waiting';
     root().innerHTML=`<div class="bs-screen bs-lobby">
       <header class="bs-lobby-head"><button class="bs-back" id="bs-lobby-back">← Назад</button><span>Онлайн 1 на 1</span></header>
       <div class="bs-lobby-content">
-        <div class="bs-lobby-stake">Ставка <b>🪙 ${Number(room.meta?.stake)||state.stake}</b></div>
+        <div class="bs-lobby-stake">Ставка <b>🪙 ${Number(room.meta?.stake)||state.stake}</b> · Банк <b>🪙 ${Number(room.meta?.bank)||players.length*state.stake}</b></div>
         <div class="bs-lobby-slots">
-          <div class="bs-lobby-player"><span class="bs-lobby-avatar">${escapeHtml(mine?.avatar||'Я')}</span><strong>Ти</strong><small>${mine?.ready?'✅ Готовий':'Очікує'}</small></div>
+          <div class="bs-lobby-player"><span class="bs-lobby-avatar${mine?.ready?' ready':''}">${escapeHtml(mine?.isBot?'🤖':mine?.avatar||'Я')}</span><strong>${escapeHtml(mine?.name||'Ти')}</strong><small>${mine?.ready?'✅ Готовий':'Очікує'}</small></div>
           <span class="bs-vs">VS</span>
-          <div class="bs-lobby-player"><span class="bs-lobby-avatar">${escapeHtml(other?.avatar||'＋')}</span><strong>${escapeHtml(other?.name||'Суперник')}</strong><small>${other?.ready?'✅ Готовий':'Очікуємо друга'}</small></div>
+          <div class="bs-lobby-player${state.online.joinPending&&joinAvailable?' bs-open-seat':''}" ${state.online.joinPending&&joinAvailable?'id="bs-open-seat" role="button" tabindex="0"':''}><span class="bs-lobby-avatar${other?.ready?' ready':''}">${escapeHtml(other?.isBot?'🤖':other?.avatar||'＋')}</span><strong>${escapeHtml(other?.name||'＋ Вільне місце')}</strong><small>${other?.ready?'✅ Готовий':'Очікуємо друга'}</small></div>
         </div>
         <div class="bs-room-code">Код кімнати <strong>${state.online.roomCode}</strong></div>
-        <button class="bs-lobby-action primary" id="bs-invite">Надіслати запрошення в чат</button>
-        <button class="bs-lobby-action" id="bs-copy">Скопіювати посилання</button>
-        ${state.online.localTest&&!other?'<button class="bs-lobby-action" id="bs-add-test">＋ Додати тест-суперника</button>':''}
-        <button class="bs-lobby-action primary" id="bs-arrange" ${mine?.ready?'disabled':''}>${mine?.ready?'Очікуємо готовності суперника':'Розставити флот'}</button>
-        <p class="bs-lobby-hint">${inviteUrl?'Поділися посиланням і дочекайся готовності обох гравців.':''}</p>
-        <div class="bs-online-status">${room.meta?.status==='battle'?'Гра починається…':`Готові: ${players.filter(player=>player.ready).length}/2`}</div>
+        ${isHost?'<button class="bs-lobby-action primary" id="bs-invite">Надіслати запрошення в чат</button><button class="bs-lobby-action" id="bs-copy">Скопіювати посилання</button>':''}
+        ${isHost&&players.length<2?'<button class="bs-lobby-action" id="bs-add-ai">🤖 + Додати ШІ-бота</button>':''}
+        ${state.online.joinPending?(joinAvailable?`<button class="bs-lobby-action primary" id="bs-join">Приєднатися до столу (ставка: ${Number(room.meta?.stake)||state.stake} 🪙)</button>`:'<div class="bs-online-status">У кімнаті немає вільного місця.</div>'):''}
+        ${!state.online.joinPending?`<button class="bs-lobby-action primary" id="bs-ready">${mine?.ready?'Не готовий ❌':'Готово ✅'}</button><button class="bs-lobby-action" id="bs-arrange" ${mine?.isBot?'disabled':''}>⚓ Розставити флот</button>`:''}
+        ${isHost&&!state.online.joinPending?`<button class="bs-lobby-action primary" id="bs-start" ${canStartBattle(room)?'':'disabled'}>Почати гру</button>`:''}
+        <p class="bs-lobby-hint">${isHost&&inviteUrl?'Поділися посиланням і дочекайся готовності суперника.':''}</p>
+        ${state.online.joinPending?'':`<div class="bs-online-status">${room.meta?.status==='playing'||room.meta?.status==='battle'?'Гра починається…':`Готові: ${players.filter(player=>player.ready||player.isBot).length}/2`}</div>`}
+        <button class="bs-lobby-action" id="bs-lobby-back">${state.online.joinPending||isHost?'← Назад':'Вийти зі столу'}</button>
       </div>
     </div>`;
     const avatars=root().querySelectorAll('.bs-lobby-avatar');
-    window.renderPlayerAvatar?.(avatars[0],mine||{name:'Я'},'Я');
-    window.renderPlayerAvatar?.(avatars[1],other||{name:'Суперник'},'＋');
-    document.getElementById('bs-lobby-back').onclick=()=>{
-      if(state.online?.unsubscribe)state.online.db.ref(`battleshipRooms/${state.online.roomCode}`).off('value',state.online.unsubscribe);
-      state.online=null;renderMenu();
+    window.renderPlayerAvatar?.(avatars[0],mine||{name:'Я'},mine?.isBot?'🤖':'Я');
+    window.renderPlayerAvatar?.(avatars[1],other||{name:'Суперник'},other?.isBot?'🤖':'＋');
+    document.getElementById('bs-lobby-back').onclick=()=>{void leaveLobby();};
+    document.getElementById('bs-invite')?.addEventListener('click',shareRoomLink);
+    document.getElementById('bs-copy')?.addEventListener('click',()=>{void copyRoomLink();});
+    document.getElementById('bs-add-ai')?.addEventListener('click',()=>{void addAiOpponent();});
+    document.getElementById('bs-join')?.addEventListener('click',()=>{void acceptRoomInvite();});
+    const openSeat=document.getElementById('bs-open-seat');
+    openSeat?.addEventListener('click',()=>{void acceptRoomInvite();});
+    openSeat?.addEventListener('keydown',event=>{
+      if(event.key==='Enter'||event.key===' '){event.preventDefault();void acceptRoomInvite();}
+    });
+    document.getElementById('bs-arrange')?.addEventListener('click',()=>{void editFleet();});
+    document.getElementById('bs-ready')?.addEventListener('click',()=>{void toggleOnlineReady();});
+    document.getElementById('bs-start')?.addEventListener('click',()=>{void startOnlineGame();});
+  }
+
+  async function acceptRoomInvite(){
+    const online=state.online;
+    if(!online||online.localTest||!online.joinPending)return;
+    const profile=window.getCurrentPlayerProfile?.()||{};
+    const player={
+      id:online.uid,name:playerName(),...playerProfileFields(),avatar:(playerName()[0]||'Г').toUpperCase(),
+      ready:false,fleet:serializeFleet(randomFleet().ships)
     };
-    document.getElementById('bs-invite').onclick=shareRoomLink;
-    document.getElementById('bs-copy').onclick=()=>{void copyRoomLink();};
-    document.getElementById('bs-add-test')?.addEventListener('click',addTestOpponent);
-    document.getElementById('bs-arrange').onclick=()=>{
-      if(mine?.ready)return;
-      startPlacement();
-    };
+    try{
+      const result=await window.joinRoomWithStake(`battleshipRooms/${online.roomCode}`,online.roomCode,
+        Number(online.roomData.meta?.stake)||state.stake,current=>{
+          if(!current||current.meta?.status!=='waiting')return {error:'Бій уже розпочався.'};
+          current.players||={};
+          const existing=Object.values(current.players).find(item=>String(item.id)===String(online.uid)||
+            (profile.telegramId&&item.telegramId===profile.telegramId));
+          if(existing)return {alreadyJoined:true};
+          if(Object.keys(current.players).length>=2)return {error:'У кімнаті вже є два гравці.'};
+          current.players[online.uid]=player;
+          current.meta.bank=(Number(current.meta.bank)||Number(current.meta.stake)||state.stake)+(Number(current.meta.stake)||state.stake);
+          return {room:current};
+        });
+      const joinedPlayer=Object.values(result.room.players||{}).find(item=>String(item.id)===String(online.uid)||
+        (profile.telegramId&&item.telegramId===profile.telegramId));
+      if(!joinedPlayer)throw new Error('Не вдалося знайти ваше місце за столом.');
+      online.uid=joinedPlayer.id;
+      online.joinPending=false;
+      online.isHost=String(result.room.meta?.hostId)===String(online.uid);
+      onOnlineRoom(result.room);
+    }catch(error){
+      console.error('Unable to join the invited Battleship room',error);
+      notify(error.message||'Не вдалося приєднатися до кімнати.');
+    }
+  }
+
+  function canStartBattle(room){
+    const players=Object.values(room.players||{});
+    return players.length>=2&&players.every(player=>player.ready||player.isBot);
+  }
+
+  async function toggleOnlineReady(){
+    const online=state.online;
+    const mine=online?.roomData?.players?.[online.uid];
+    if(!online||!mine||mine.isBot)return;
+    const ready=!mine.ready;
+    const fleet=mine.fleet||serializeFleet(randomFleet().ships);
+    if(online.localTest){
+      Object.assign(mine,{ready,fleet});
+      onOnlineRoom(online.roomData);
+      return;
+    }
+    try{
+      await online.db.ref(`battleshipRooms/${online.roomCode}`).transaction(room=>{
+        if(!room||room.meta?.status!=='waiting'||!room.players?.[online.uid])return;
+        room.players[online.uid].ready=ready;
+        room.players[online.uid].fleet=fleet;
+        return room;
+      });
+    }catch(error){
+      console.error('Unable to update Battleship readiness',error);
+      notify('Не вдалося змінити готовність.');
+    }
+  }
+
+  async function editFleet(){
+    const online=state.online;
+    const mine=online?.roomData?.players?.[online.uid];
+    if(!online||!mine||mine.isBot)return;
+    if(mine.ready)await toggleOnlineReady();
+    startPlacement();
+  }
+
+  async function startOnlineGame(){
+    const online=state.online;
+    if(!online||String(online.uid)!==String(online.roomData.meta?.hostId))return;
+    if(Number(window.APP_STATE?.balance)<state.stake){
+      notify('Недостатньо монет для ставки 🪙');
+      return;
+    }
+    if(online.localTest){
+      if(!canStartBattle(online.roomData)){notify('Усі гравці мають натиснути «Готово».');return;}
+      online.roomData.meta.status='playing';
+      online.roomData.turn=online.roomData.meta.hostId;
+      onOnlineRoom(online.roomData);
+      return;
+    }
+    try{
+      const result=await online.db.ref(`battleshipRooms/${online.roomCode}`).transaction(room=>{
+        if(!room||String(room.meta?.hostId)!==String(online.uid)||room.meta?.status!=='waiting'||
+            !canStartBattle(room))return;
+        room.meta.status='playing';
+        room.turn=String(room.meta.hostId);
+        room.startedAt=Date.now();
+        return room;
+      });
+      if(!result.committed)notify('Почати можна, коли всі гравці готові.');
+    }catch(error){
+      console.error('Unable to start Battleship room',error);
+      notify('Не вдалося почати гру.');
+    }
+  }
+
+  async function leaveLobby(){
+    const online=state.online;
+    if(!online)return;
+    if(!online.localTest&&online.isHost&&online.roomData.meta?.status==='waiting'){
+      try{
+        await online.db.ref(`battleshipRooms/${online.roomCode}`).remove();
+      }catch(error){
+        console.error('Unable to close Battleship room',error);notify('Не вдалося закрити стіл.');return;
+      }
+    }else if(!online.localTest&&!online.isHost&&!online.joinPending&&online.roomData.meta?.status==='waiting'){
+      try{
+        await window.leaveRoomWithRefund(`battleshipRooms/${online.roomCode}`,online.roomCode,
+          Number(online.roomData.meta?.stake)||state.stake,current=>{
+            if(!current?.players?.[online.uid])return;
+            delete current.players[online.uid];
+            current.meta.bank=Math.max(0,(Number(current.meta.bank)||0)-(Number(current.meta.stake)||state.stake));
+            return {room:current};
+          });
+      }catch(error){
+        console.error('Unable to leave the Battleship room',error);
+        notify('Не вдалося вийти зі столу.');
+        return;
+      }
+    }
+    if(online.unsubscribe)online.db.ref(`battleshipRooms/${online.roomCode}`).off('value',online.unsubscribe);
+    state.online=null;
+    renderMenu();
   }
 
   function escapeHtml(value){
     return String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   }
 
-  async function addTestOpponent(){
+  async function addAiOpponent(){
+    const online=state.online;
+    if(!online||String(online.uid)!==String(online.roomData.meta?.hostId)||Object.keys(online.roomData.players||{}).length>=2)return;
     const fleet=randomFleet();
-    const id='test-opponent';
-    const opponent={id,name:'Тест-суперник',avatar:'Т',ready:true,fleet:serializeFleet(fleet.ships)};
-    const room=state.online.roomData;
-    room.players[id]=opponent;
-    if(state.online.db){
-      try{await state.online.db.ref(`battleshipRooms/${state.online.roomCode}/players/${id}`).set(opponent);}
-      catch(error){console.error('Unable to add a test opponent',error);notify('Не вдалося додати тест-суперника.');return;}
+    const id=`bot-${Date.now()}`;
+    const opponent={id,name:'ШІ-бот',avatar:'🤖',ready:true,isBot:true,fleet:serializeFleet(fleet.ships)};
+    if(online.localTest){
+      online.roomData.players[id]=opponent;
+      online.testFleet=fleet;
+      onOnlineRoom(online.roomData);
+      notify('ШІ-бот приєднався');
+      return;
     }
-    state.online.testFleet=fleet;
-    onOnlineRoom(room);
-    notify('Тест-суперник приєднався');
+    try{
+      const result=await online.db.ref(`battleshipRooms/${online.roomCode}`).transaction(room=>{
+        if(!room||String(room.meta?.hostId)!==String(online.uid)||room.meta?.status!=='waiting'||
+            Object.keys(room.players||{}).length>=2)return;
+        room.players[id]=opponent;
+        room.meta.bank=(Number(room.meta.bank)||Number(room.meta.stake)||state.stake)
+          +(Number(room.meta.stake)||state.stake);
+        return room;
+      });
+      if(!result.committed)notify('У кімнаті немає вільного місця.');
+    }catch(error){
+      console.error('Unable to add a Battleship AI opponent',error);
+      notify('Не вдалося додати ШІ-бота.');
+    }
   }
 
   function serializeFleet(ships){
@@ -332,7 +488,7 @@ window.Battleship = (() => {
   function startOnlineBattle(room){
     const players=Object.values(room.players||{});
     const own=room.players?.[state.online.uid];
-    const opponent=players.find(player=>player.id!==state.online.uid);
+    const opponent=players.find(player=>String(player.id)!==String(state.online.uid));
     if(!own?.fleet||!opponent?.fleet)return;
     const wagerId=`battleship-${state.online.roomCode}-${room.meta?.round||1}`;
     if(!state.wagerStarted){
@@ -350,7 +506,7 @@ window.Battleship = (() => {
     state.enemyShips.forEach(ship=>ship.cells.forEach(i=>state.enemyGrid[i]=ship.id));
     state.enemyResults={};state.playerResults={};
     state.playerStats={shots:0,hits:0,sunk:0};state.enemyStats={shots:0,hits:0,sunk:0};
-    state.turn=room.turn===state.online.uid?'player':'bot';
+    state.turn=String(room.turn)===String(state.online.uid)?'player':'bot';
     state.screen='battle';
     syncOnlineShots(room);
     if(room.meta?.status==='finished')return;
@@ -362,7 +518,7 @@ window.Battleship = (() => {
     if(!state.online||!room.shots)return;
     const outgoing=Object.values(room.shots[state.online.uid]||{});
     const incoming=Object.entries(room.shots||{})
-      .filter(([playerId])=>playerId!==state.online.uid)
+      .filter(([playerId])=>String(playerId)!==String(state.online.uid))
       .flatMap(([,shots])=>Object.values(shots||{}));
     state.enemyResults={};state.playerResults={};
     state.playerStats={shots:outgoing.length,hits:0,sunk:0};
@@ -387,18 +543,62 @@ window.Battleship = (() => {
         }
       });
     });
-    state.turn=room.turn===state.online.uid?'player':'bot';
+    state.turn=String(room.turn)===String(state.online.uid)?'player':'bot';
     if(room.meta?.status==='finished'){
       finish(room.winner===state.online.uid);
     }
+  }
+
+  function scheduleOnlineBotTurn(room){
+    const online=state.online;
+    const bot=Object.values(room.players||{}).find(player=>player.isBot&&String(player.id)===String(room.turn));
+    if(!online?.db||!online.isHost||!bot||room.meta?.status!=='playing')return;
+    const shots=room.shots?.[bot.id]||{};
+    const key=`${room.meta.round||1}:${Object.keys(shots).length}`;
+    if(online.botTurnKey===key)return;
+    online.botTurnKey=key;
+    setTimeout(async()=>{
+      try{
+        const result=await online.db.ref(`battleshipRooms/${online.roomCode}`).transaction(current=>{
+          const currentBot=current?.players?.[bot.id];
+          const own=current?.players?.[online.uid];
+          if(!current||current.meta?.status!=='playing'||String(current.turn)!==String(bot.id)||
+              !currentBot?.isBot||!own?.fleet)return;
+          const botShots=current.shots?.[bot.id]||{};
+          const available=Array.from({length:N*N},(_,index)=>index)
+            .filter(index=>!Object.prototype.hasOwnProperty.call(botShots,index));
+          if(!available.length)return;
+          const index=available[Math.floor(Math.random()*available.length)];
+          const hit=own.fleet.some(ship=>ship.cells.includes(index));
+          const hitCells=new Set(Object.values(botShots).filter(shot=>shot.hit).map(shot=>shot.index));
+          if(hit)hitCells.add(index);
+          const won=hit&&own.fleet.every(ship=>ship.cells.every(cell=>hitCells.has(cell)));
+          current.shots||={};
+          current.shots[bot.id]||={};
+          current.shots[bot.id][index]={index,hit,at:Date.now()};
+          if(won){
+            current.meta.status='finished';
+            current.winner=bot.id;
+          }else if(!hit){
+            current.turn=online.uid;
+          }
+          return current;
+        });
+        if(!result.committed)online.botTurnKey=null;
+      }catch(error){
+        online.botTurnKey=null;
+        console.error('Unable to submit a Battleship AI shot',error);
+        notify('ШІ-бот не зміг зробити постріл.');
+      }
+    },650);
   }
 
   async function fireOnline(i){
     if(!state.online?.db)return;
     const room=state.online.roomData;
     const players=Object.values(room?.players||{});
-    const opponent=players.find(player=>player.id!==state.online.uid);
-    if(!opponent||room.turn!==state.online.uid)return;
+    const opponent=players.find(player=>String(player.id)!==String(state.online.uid));
+    if(!opponent||String(room.turn)!==String(state.online.uid))return;
     const ship=state.enemyShips.find(item=>item.cells.includes(i));
     const myShots=Object.values(room.shots?.[state.online.uid]||{});
     const previousHits=new Set(myShots.filter(shot=>shot.hit).map(shot=>shot.index));
@@ -425,52 +625,37 @@ window.Battleship = (() => {
   }
 
   async function confirmOnlineReady(){
-    if(Number(window.APP_STATE?.balance)<state.stake){
-      notify('Недостатньо монет для ставки 🪙');
-      renderLobby();
-      return;
-    }
+    const online=state.online;
+    if(!online)return;
     const fleet=serializeFleet(state.playerShips);
-    const room=state.online.roomData;
-    const playerPath=`battleshipRooms/${state.online.roomCode}/players/${state.online.uid}`;
-    if(state.online.db){
+    const room=online.roomData;
+    if(online.db){
       try{
-        await state.online.db.ref(playerPath).update({ready:true,fleet});
-        const ref=state.online.db.ref(`battleshipRooms/${state.online.roomCode}`);
-        const result=await ref.transaction(current=>{
-          if(!current||!current.players)return current;
-          const participants=Object.values(current.players);
-          if(participants.length===2&&participants.every(player=>player.ready)){
-            current.meta.status='battle';
-            current.turn=current.meta.hostId;
-            current.startedAt=Date.now();
-          }
+        const result=await online.db.ref(`battleshipRooms/${online.roomCode}`).transaction(current=>{
+          if(!current||current.meta?.status!=='waiting'||!current.players?.[online.uid])return;
+          current.players[online.uid].ready=true;
+          current.players[online.uid].fleet=fleet;
           return current;
         });
-        if(result.snapshot.exists())state.online.roomData=result.snapshot.val();
+        if(result.snapshot.exists())online.roomData=result.snapshot.val();
       }catch(error){
         console.error('Unable to publish Battleship fleet readiness',error);
         notify('Не вдалося зберегти готовність у Firebase.');
       }
     }else{
-      const player=room.players[state.online.uid];
-      player.ready=true;player.fleet=fleet;
-      const opponent=Object.values(room.players).find(item=>item.id!==state.online.uid);
-      if(opponent?.ready)room.meta.status='battle';
+      const player=room.players[online.uid];
+      player.ready=true;
+      player.fleet=fleet;
       onOnlineRoom(room);
     }
-    if(state.online.roomData?.meta?.status==='battle')onOnlineRoom(state.online.roomData);
-    else {state.screen='lobby';renderLobby();}
+    state.screen='lobby';
+    renderLobby();
   }
 
   function startPlacement(){
     state.screen='place';state.playerGrid=emptyGrid();state.playerShips=[];state.enemyResults={};state.playerResults={};
     state.playerStats={shots:0,hits:0,sunk:0};state.enemyStats={shots:0,hits:0,sunk:0};
     state.target=null;state.selLen=4;state.selDir='h';state.localPhase='p1';
-    if(state.online){
-      const mine=state.online.roomData?.players?.[state.online.uid];
-      if(mine?.ready)return renderLobby();
-    }
     renderPlace();
   }
 
@@ -725,7 +910,7 @@ window.Battleship = (() => {
     const enemyCount=10-state.playerStats.sunk;
     const accuracy=state.playerStats.shots?Math.round(state.playerStats.hits/state.playerStats.shots*100):0;
     const enemyPlayer=state.mode==='online'
-      ? Object.values(state.online?.roomData?.players||{}).find(player=>player.id!==state.online.uid)
+      ? Object.values(state.online?.roomData?.players||{}).find(player=>String(player.id)!==String(state.online.uid))
       : null;
     const opponentName=state.mode==='bot'?'Abayazhka':state.mode==='local'?'Гравець 2':enemyPlayer?.name||'Суперник';
     root().innerHTML=`<div class="bs-screen bs-battle">
@@ -821,5 +1006,5 @@ window.Battleship = (() => {
     }
   }
 
-  return {init};
+  return {init,joinRoom:joinOnlineRoom};
 })();

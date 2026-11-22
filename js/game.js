@@ -67,6 +67,121 @@
     return `https://t.me/SecretAgentGame646Bot?startapp=room_${encodeURIComponent(roomCode.trim())}`;
   };
 
+  const publicRoomMounts = new WeakMap();
+
+  window.PublicRooms = {
+    mount(container, onJoin) {
+      if (!container) return () => {};
+      const previousMount = publicRoomMounts.get(container);
+      previousMount?.unsubscribers.forEach((unsubscribe) => unsubscribe());
+      const mountState = { unsubscribers: [] };
+      publicRoomMounts.set(container, mountState);
+      const roomsByCollection = new Map();
+      container.replaceChildren();
+
+      function render() {
+        if (publicRoomMounts.get(container) !== mountState) return;
+        const rooms = [...roomsByCollection.values()].flat()
+          .sort((left, right) => (Number(right.createdAt) || 0) - (Number(left.createdAt) || 0));
+        container.replaceChildren();
+        if (!rooms.length) {
+          const empty = document.createElement('p');
+          empty.className = 'public-room-empty';
+          empty.textContent = 'Немає відкритих столів';
+          container.appendChild(empty);
+          return;
+        }
+
+        rooms.forEach((room) => {
+          const card = document.createElement('article');
+          card.className = 'public-room-card';
+          const info = document.createElement('div');
+          info.className = 'public-room-info';
+          const title = document.createElement('strong');
+          title.textContent = `${room.gameTitle} · ${room.hostName || 'Гравець'}`;
+          const details = document.createElement('span');
+          details.textContent = `${room.mode} · 🪙 ${room.stake} · ${room.playerCount}/${room.capacity} гравців`;
+          info.append(title, details);
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'public-room-join';
+          button.textContent = 'Увійти';
+          button.disabled = room.playerCount >= room.capacity;
+          button.addEventListener('click', () => {
+            Promise.resolve(onJoin(room.game, room.roomCode)).catch((error) => {
+              console.error('Unable to open a public room', error);
+              window.TWA?.toast?.(error.message || 'Не вдалося відкрити стіл.');
+            });
+          });
+          card.append(info, button);
+          container.appendChild(card);
+        });
+      }
+
+      function presentRoom(collection, document) {
+        const data = document.data();
+        const meta = data.meta || {};
+        const players = collection === 'durakRooms'
+          ? Object.values(data.seats || {}).filter(Boolean)
+          : Object.values(data.players || {}).filter(Boolean);
+        const host = players.find((player) => String(player.id) === String(meta.hostId));
+        const settings = meta.settings || {};
+        const isDurak = collection === 'durakRooms';
+        const game = isDurak ? 'durak' : collection === 'battleshipRooms' ? 'battleship' : 'tictactoe';
+        return {
+          game,
+          gameTitle: isDurak ? 'Дурак' : game === 'battleship' ? 'Морський бій' : 'Хрестики-нулики',
+          roomCode: document.id,
+          hostName: meta.hostName || host?.name || 'Гравець',
+          mode: isDurak ? `${settings.mode || 'Простий'} · ${settings.deck || 36}` : 'Онлайн 1 на 1',
+          stake: Number(isDurak ? settings.stake : meta.stake) || 0,
+          playerCount: players.length,
+          capacity: Number(isDurak ? settings.players : 2) || 2,
+          createdAt: Number(meta.createdAt) || 0,
+        };
+      }
+
+      async function subscribe() {
+        try {
+          if (!firebaseConfigIsReady() || !window.firebase?.firestore) {
+            throw new Error('Відкриті столи потребують налаштованого Firebase.');
+          }
+          if (!window.firebase.apps.length) window.firebase.initializeApp(window.FIREBASE_CONFIG);
+          await getFirebaseUser();
+          if (publicRoomMounts.get(container) !== mountState) return;
+          const firestore = window.firebase.firestore();
+          ['durakRooms', 'battleshipRooms', 'tictactoeRooms'].forEach((collection) => {
+            const unsubscribe = firestore.collection(collection)
+              .where('meta.isPublic', '==', true)
+              .where('meta.status', '==', 'waiting')
+              .onSnapshot((snapshot) => {
+                roomsByCollection.set(collection, snapshot.docs.map((document) => presentRoom(collection, document)));
+                render();
+              }, (error) => {
+                console.error(`Public ${collection} listener failed`, error);
+                if (publicRoomMounts.get(container) === mountState) {
+                  container.textContent = 'Не вдалося завантажити відкриті столи.';
+                }
+              });
+            mountState.unsubscribers.push(unsubscribe);
+          });
+        } catch (error) {
+          console.error('Unable to subscribe to public rooms', error);
+          if (publicRoomMounts.get(container) === mountState) {
+            container.textContent = error.message || 'Не вдалося завантажити відкриті столи.';
+          }
+        }
+      }
+
+      void subscribe();
+      return () => {
+        if (publicRoomMounts.get(container) !== mountState) return;
+        mountState.unsubscribers.forEach((unsubscribe) => unsubscribe());
+        publicRoomMounts.delete(container);
+      };
+    },
+  };
+
   function getCurrentPlayerProfile() {
     const user = window.Telegram?.WebApp?.initDataUnsafe?.user;
     const username = typeof user?.username === 'string' ? user.username.replace(/^@/, '') : '';
@@ -458,6 +573,77 @@
     return true;
   };
 
+  const ROOM_WAGER_PREFIX = 'tga_room_wager_';
+
+  window.joinRoomWithStake = async function joinRoomWithStake(roomPath, roomCode, stake, transform) {
+    const profile = getCurrentPlayerProfile();
+    if (!profile.telegramId) throw new Error('Відкрийте кімнату через Telegram, щоб зробити ставку.');
+    if (!window.FirebaseRoomStore?.joinWithStake) {
+      throw new Error('Сервіс ставок тимчасово недоступний.');
+    }
+
+    const key = `${ROOM_WAGER_PREFIX}${encodeURIComponent(roomCode)}`;
+    const previousRecord = localStorage.getItem(key);
+    localStorage.setItem(key, JSON.stringify({ stake }));
+    try {
+      const result = await window.FirebaseRoomStore.joinWithStake(
+        roomPath,
+        profile.telegramId,
+        stake,
+        transform,
+      );
+      if (!result.alreadyJoined) {
+        applyRemoteBalance(result.balance, 'room-join');
+      } else if (previousRecord) {
+        localStorage.setItem(key, previousRecord);
+      } else {
+        localStorage.removeItem(key);
+      }
+      return result;
+    } catch (error) {
+      if (previousRecord) localStorage.setItem(key, previousRecord);
+      else localStorage.removeItem(key);
+      throw error;
+    }
+  };
+
+  window.leaveRoomWithRefund = async function leaveRoomWithRefund(roomPath, roomCode, stake, transform) {
+    const key = `${ROOM_WAGER_PREFIX}${encodeURIComponent(roomCode)}`;
+    const record = JSON.parse(localStorage.getItem(key) || 'null');
+    if (!record || record.stake !== stake) {
+      return window.FirebaseRoomStore.ref(roomPath).transaction((room) => transform(room)?.room);
+    }
+    const profile = getCurrentPlayerProfile();
+    if (!profile.telegramId) throw new Error('Не вдалося перевірити профіль для повернення ставки.');
+    const result = await window.FirebaseRoomStore.leaveWithRefund(
+      roomPath,
+      profile.telegramId,
+      stake,
+      transform,
+    );
+    if (!result.alreadyJoined) {
+      localStorage.removeItem(key);
+      applyRemoteBalance(result.balance, 'room-leave-refund');
+    }
+    return result;
+  };
+
+  function useRoomWager(matchId, stake) {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(ROOM_WAGER_PREFIX)) continue;
+      const roomCode = decodeURIComponent(key.slice(ROOM_WAGER_PREFIX.length));
+      const record = JSON.parse(localStorage.getItem(key) || 'null');
+      if (!record || record.stake !== stake || !matchId.includes(roomCode)) continue;
+      localStorage.removeItem(key);
+      localStorage.setItem(`tga_wager_${encodeURIComponent(matchId)}`, JSON.stringify({
+        stake, charged: true, settled: false,
+      }));
+      return true;
+    }
+    return false;
+  }
+
   window.beginUserWager = function beginUserWager(matchId, stake) {
     if (!matchId || !Number.isSafeInteger(stake) || stake < 0) {
       throw new TypeError('A match id and non-negative integer stake are required.');
@@ -465,6 +651,7 @@
     const key = `tga_wager_${encodeURIComponent(matchId)}`;
     const existing = JSON.parse(localStorage.getItem(key) || 'null');
     if (existing?.charged) return true;
+    if (useRoomWager(matchId, stake)) return true;
     if (!window.updateUserBalance(-stake)) {
       return false;
     }
@@ -600,6 +787,25 @@ window.openBattleshipScreen = function openBattleshipScreen() {
   } else {
     console.error('Battleship module is not loaded');
   }
+};
+
+window.openPublicRoom = async function openPublicRoom(game, roomCode) {
+  if (game === 'durak') {
+    window.showView?.('durak');
+    await window.DurakRoom?.joinRoom(roomCode);
+    return;
+  }
+  if (game === 'tictactoe') {
+    window.showView?.('tictactoe');
+    await window.TicTacToe?.joinRoom(roomCode);
+    return;
+  }
+  if (game === 'battleship') {
+    window.openBattleshipScreen();
+    await window.Battleship?.joinRoom(roomCode);
+    return;
+  }
+  throw new Error('Невідома гра для відкритого столу.');
 };
 
 function checkRoundCompletion() {

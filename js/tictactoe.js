@@ -8,6 +8,7 @@ window.TicTacToe = (() => {
   let state = {};
   let timer = null;
   let botTimer = null;
+  let publicRoomsUnmount = null;
 
   const root = () => document.getElementById('view-tictactoe');
   const notify = (message) => window.TWA?.toast ? window.TWA.toast(message) : window.alert(message);
@@ -79,6 +80,7 @@ window.TicTacToe = (() => {
 
   function renderMenu() {
     state.screen = 'menu';
+    publicRoomsUnmount?.();
     if (!shell(`${topbar()}
       <main class="ttt-menu">
         <div><h1 class="ttt-title">Хрестики-нулики</h1><p class="ttt-subtitle">Швидка дуель на полі 3×3</p></div>
@@ -87,7 +89,12 @@ window.TicTacToe = (() => {
           <button class="ttt-mode-card" type="button" data-mode="bot"><span class="ttt-mode-icon">⌘</span><span class="ttt-mode-copy"><b>Дуель проти бота</b><small>Розумний ШІ · гра на монети</small></span><b>›</b></button>
           <button class="ttt-mode-card" type="button" data-mode="local"><span class="ttt-mode-icon">▦</span><span class="ttt-mode-copy"><b>На одному екрані</b><small>Двоє гравців ходять по черзі</small></span><b>›</b></button>
         </div>
+        <section class="public-rooms-section"><h2>Відкриті столи</h2><div class="public-room-list" id="ttt-open-room-list"><p class="public-room-empty">Завантаження відкритих столів…</p></div></section>
       </main>`)) return;
+    publicRoomsUnmount = window.PublicRooms?.mount(
+      root().querySelector('#ttt-open-room-list'),
+      (game, roomCode) => window.openPublicRoom(game, roomCode),
+    ) || null;
     root().querySelector('[data-action="back"]').onclick = leaveToHome;
     root().querySelector('[data-action="sound"]').onclick = toggleSound;
     root().querySelectorAll('[data-mode]').forEach((button) => {
@@ -164,13 +171,22 @@ window.TicTacToe = (() => {
       isBot: false,
     };
     const room = {
-      meta: { stake: state.stake, status: 'waiting', hostId: uid, createdAt: Date.now() },
+      meta: {
+        stake: state.stake,
+        bank: state.stake,
+        status: 'waiting',
+        hostId: String(uid),
+        hostName: profile.name,
+        isPublic: true,
+        createdAt: Date.now(),
+      },
       gameRound: 0,
       players: { [uid]: host },
     };
     state.online = {
       roomCode,
       uid,
+      isHost: true,
       db: backend?.db || null,
       localTest: !backend,
       roomData: room,
@@ -218,22 +234,15 @@ window.TicTacToe = (() => {
       const snapshot = await reference.once('value');
       const room = snapshot.val();
       if (!room || room.meta?.status !== 'waiting') throw new Error('Кімнату не знайдено або гра вже почалася.');
-      if (!room.players?.[backend.uid]) {
-        if (Object.keys(room.players || {}).length >= 2) throw new Error('У кімнаті вже є два гравці.');
-        await reference.child(`players/${backend.uid}`).set({
-          id: backend.uid,
-          telegramId: window.getCurrentPlayerProfile?.().telegramId || '',
-          username: window.getCurrentPlayerProfile?.().username || '',
-          photoUrl: window.getCurrentPlayerProfile?.().photoUrl || '',
-          name: window.getCurrentPlayerProfile?.().name || 'Гравець',
-          symbol: 'O',
-          ready: false,
-          isBot: false,
-        });
-      }
+      const profile = window.getCurrentPlayerProfile?.() || {};
+      const existing = Object.values(room.players || {}).find((player) => String(player.id) === String(backend.uid) ||
+        (profile.telegramId && player.telegramId === profile.telegramId));
+      const uid = existing?.id || backend.uid;
       state.online = {
         roomCode: code,
-        uid: backend.uid,
+        uid,
+        isHost: String(room.meta?.hostId) === String(uid),
+        joinPending: !existing,
         db: backend.db,
         localTest: false,
         roomData: room,
@@ -254,9 +263,11 @@ window.TicTacToe = (() => {
     state.screen = 'lobby';
     const room = state.online?.roomData || {};
     const players = Object.values(room.players || {});
-    const mine = players.find((player) => player.id === state.online.uid);
-    const opponent = players.find((player) => player.id !== state.online.uid);
+    const mine = players.find((player) => String(player.id) === String(state.online.uid));
+    const opponent = players.find((player) => String(player.id) !== String(state.online.uid));
     const link = roomLink();
+    const isHost = String(state.online.uid) === String(room.meta?.hostId);
+    const joinAvailable = players.length < 2 && room.meta?.status === 'waiting';
     const notice = state.online.localTest
       ? 'Локальне тестове лобі. Для гри з другом налаштуй Firebase.'
       : 'Поділися посиланням і дочекайся готовності обох гравців.';
@@ -264,33 +275,111 @@ window.TicTacToe = (() => {
       <main class="ttt-lobby-screen">
         <div class="ttt-lobby-card">
           <h1 class="ttt-title">Онлайн 1 на 1</h1>
-          <p class="ttt-subtitle">Ставка 🪙 ${Number(room.meta?.stake) || state.stake}</p>
+          <p class="ttt-subtitle">Ставка 🪙 ${Number(room.meta?.stake) || state.stake} · Банк 🪙 ${Number(room.meta?.bank) || (players.length * state.stake)}</p>
           <div class="ttt-lobby-players">
-            <div class="ttt-player-card"><span class="ttt-avatar">${escapeHtml(mine?.name?.[0] || 'Я')}</span><b>${escapeHtml(mine?.name || 'Ти')} · ✕</b><small>${mine?.ready ? '✅ Готовий' : 'Очікує'}</small></div>
+            <div class="ttt-player-card"><span class="ttt-avatar${mine?.ready ? ' ready' : ''}">${escapeHtml(mine?.isBot ? '🤖' : mine?.name?.[0] || 'Я')}</span><b>${escapeHtml(mine?.name || 'Ти')} · ✕</b><small>${mine?.ready ? '✅ Готовий' : 'Очікує'}</small></div>
             <span>VS</span>
-            <div class="ttt-player-card"><span class="ttt-avatar">${escapeHtml(opponent?.name?.[0] || '+')}</span><b>${escapeHtml(opponent?.name || 'Суперник')} · ○</b><small>${opponent?.ready ? '✅ Готовий' : 'Очікуємо друга'}</small></div>
+            <div class="ttt-player-card${state.online.joinPending && joinAvailable ? ' ttt-open-seat' : ''}" ${state.online.joinPending && joinAvailable ? 'data-action="join-seat" role="button" tabindex="0"' : ''}><span class="ttt-avatar${opponent?.ready ? ' ready' : ''}">${escapeHtml(opponent?.isBot ? '🤖' : opponent?.name?.[0] || '+')}</span><b>${escapeHtml(opponent?.name || '＋ Вільне місце')} · ○</b><small>${opponent?.ready ? '✅ Готовий' : 'Очікуємо друга'}</small></div>
           </div>
-          <div class="ttt-lobby-hint">Код кімнати: <b>${escapeHtml(state.online.roomCode)}</b><br>${notice}<br>Готові: ${players.filter((player) => player.ready).length}/2</div>
-          <button class="ttt-lobby-action" type="button" data-action="invite">Надіслати запрошення в чат</button>
-          <button class="ttt-lobby-action" type="button" data-action="copy">Скопіювати посилання</button>
-          ${state.online.localTest && !opponent ? '<button class="ttt-lobby-action" type="button" data-action="test">＋ Додати тест-суперника</button>' : ''}
+          <div class="ttt-lobby-hint">${state.online.joinPending ? 'Кімната відкрита. Приєднайтеся, щоб зайняти місце.' : !isHost ? 'Очікування початку гри...' : `Код кімнати: <b>${escapeHtml(state.online.roomCode)}</b><br>${notice}<br>Готові: ${players.filter((player) => player.ready).length}/2`}</div>
+          ${isHost ? '<button class="ttt-lobby-action" type="button" data-action="invite">Надіслати запрошення в чат</button><button class="ttt-lobby-action" type="button" data-action="copy">Скопіювати посилання</button>' : ''}
+          ${isHost && players.length < 2 ? '<button class="ttt-lobby-action" type="button" data-action="ai">🤖 + Додати ШІ-бота</button>' : ''}
           ${state.fundingError ? '<p class="ttt-lobby-hint">Недостатньо монет для цієї ставки.</p>' : ''}
-          <button class="ttt-primary" type="button" data-action="ready" ${mine?.ready || !opponent ? 'disabled' : ''}>${mine?.ready ? 'Очікуємо готовності · 1/2' : 'Готовий до гри'}</button>
-          <button class="ttt-secondary" type="button" data-action="back">← Назад</button>
+          ${state.online.joinPending ? (joinAvailable ? `<button class="ttt-primary ttt-join-table" type="button" data-action="join">Приєднатися до столу (ставка: ${Number(room.meta?.stake) || state.stake} 🪙)</button>` : '<p class="ttt-lobby-hint">У кімнаті немає вільного місця.</p>') : ''}
+          ${!state.online.joinPending ? `<button class="ttt-primary" type="button" data-action="ready">${mine?.ready ? 'Не готовий ❌' : 'Готово ✅'}</button>` : ''}
+          ${isHost && !state.online.joinPending ? `<button class="ttt-primary" type="button" data-action="start" ${!canStartOnlineRoom(room) ? 'disabled' : ''}>Почати гру</button>` : ''}
+          <button class="ttt-secondary" type="button" data-action="back">${state.online.joinPending || isHost ? '← Назад' : 'Вийти зі столу'}</button>
         </div>
       </main>`)) return;
     const lobbyAvatars = root().querySelectorAll('.ttt-lobby-players .ttt-avatar');
-    window.renderPlayerAvatar?.(lobbyAvatars[0], mine || { name: 'Ти' }, 'Т');
-    window.renderPlayerAvatar?.(lobbyAvatars[1], opponent || { name: 'Суперник' }, '＋');
+    window.renderPlayerAvatar?.(lobbyAvatars[0], mine || { name: 'Ти' }, mine?.isBot ? '🤖' : 'Т');
+    window.renderPlayerAvatar?.(lobbyAvatars[1], opponent || { name: 'Суперник' }, opponent?.isBot ? '🤖' : '＋');
     root().querySelector('[data-action="sound"]').onclick = toggleSound;
-    root().querySelector('[data-action="invite"]').onclick = shareRoom;
-    root().querySelector('[data-action="copy"]').onclick = () => { void copyRoom(); };
-    root().querySelector('[data-action="test"]')?.addEventListener('click', addTestOpponent);
-    root().querySelector('[data-action="ready"]').onclick = () => { void markReady(); };
-    root().querySelector('[data-action="back"]').onclick = () => {
-      disposeOnline();
-      renderMenu();
+    root().querySelector('[data-action="invite"]')?.addEventListener('click', shareRoom);
+    root().querySelector('[data-action="copy"]')?.addEventListener('click', () => { void copyRoom(); });
+    root().querySelector('[data-action="ai"]')?.addEventListener('click', () => { void addAiOpponent(); });
+    root().querySelector('[data-action="ready"]')?.addEventListener('click', () => { void toggleReady(); });
+    root().querySelector('[data-action="start"]')?.addEventListener('click', () => { void startOnlineGame(); });
+    root().querySelector('[data-action="join"]')?.addEventListener('click', () => { void acceptRoomInvite(); });
+    const openSeat = root().querySelector('[data-action="join-seat"]');
+    openSeat?.addEventListener('click', () => { void acceptRoomInvite(); });
+    openSeat?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        void acceptRoomInvite();
+      }
+    });
+    root().querySelector('[data-action="back"]').onclick = () => { void leaveLobby(); };
+  }
+
+  async function acceptRoomInvite() {
+    const online = state.online;
+    if (!online || online.localTest || !online.joinPending) return;
+    const profile = window.getCurrentPlayerProfile?.() || {};
+    const player = {
+      id: online.uid,
+      telegramId: profile.telegramId || '',
+      username: profile.username || '',
+      photoUrl: profile.photoUrl || '',
+      name: profile.name || 'Гравець',
+      symbol: 'O',
+      ready: false,
+      isBot: false,
     };
+    try {
+      const result = await window.joinRoomWithStake(`tictactoeRooms/${online.roomCode}`, online.roomCode,
+        Number(online.roomData.meta?.stake) || state.stake, (room) => {
+          if (!room || room.meta?.status !== 'waiting') return { error: 'Гра вже почалася.' };
+          room.players ||= {};
+          const existing = Object.values(room.players).find((item) => String(item.id) === String(online.uid) ||
+            (profile.telegramId && item.telegramId === profile.telegramId));
+          if (existing) return { alreadyJoined: true };
+          if (Object.keys(room.players).length >= 2) return { error: 'У кімнаті вже є два гравці.' };
+          room.players[online.uid] = player;
+          room.meta.bank = (Number(room.meta.bank) || Number(room.meta.stake) || state.stake) + (Number(room.meta.stake) || state.stake);
+          return { room };
+        });
+      const joinedPlayer = Object.values(result.room.players || {}).find((item) => String(item.id) === String(online.uid) ||
+        (profile.telegramId && item.telegramId === profile.telegramId));
+      if (!joinedPlayer) throw new Error('Не вдалося знайти ваше місце за столом.');
+      online.uid = joinedPlayer.id;
+      online.joinPending = false;
+      online.isHost = String(result.room.meta?.hostId) === String(online.uid);
+      processRoom(result.room);
+    } catch (error) {
+      console.error('Unable to join the invited tic-tac-toe room', error);
+      notify(error.message || 'Не вдалося приєднатися до кімнати.');
+    }
+  }
+
+  async function leaveLobby() {
+    const online = state.online;
+    if (!online) return;
+    if (!online.localTest && online.isHost && online.roomData.meta?.status === 'waiting') {
+      try {
+        await online.db.ref(`tictactoeRooms/${online.roomCode}`).remove();
+      } catch (error) {
+        console.error('Unable to close the tic-tac-toe room', error);
+        notify('Не вдалося закрити стіл.');
+        return;
+      }
+    } else if (!online.localTest && !online.isHost && !online.joinPending && online.roomData.meta?.status === 'waiting') {
+      try {
+        await window.leaveRoomWithRefund(`tictactoeRooms/${online.roomCode}`, online.roomCode,
+          Number(online.roomData.meta?.stake) || state.stake, (room) => {
+            if (!room?.players?.[online.uid]) return;
+            delete room.players[online.uid];
+            room.meta.bank = Math.max(0, (Number(room.meta.bank) || 0) - (Number(room.meta.stake) || state.stake));
+            return { room };
+          });
+      } catch (error) {
+        console.error('Unable to leave the tic-tac-toe room', error);
+        notify('Не вдалося вийти зі столу.');
+        return;
+      }
+    }
+    disposeOnline();
+    renderMenu();
   }
 
   function shareRoom() {
@@ -309,57 +398,91 @@ window.TicTacToe = (() => {
     }
   }
 
-  function addTestOpponent() {
-    if (!state.online?.localTest) return;
-    const id = 'test-opponent';
-    state.online.roomData.players[id] = {
-      id, name: 'Тест-суперник', symbol: 'O', ready: true, isBot: true,
-    };
-    renderLobby();
-    notify('Тест-суперник приєднався');
-  }
-
-  async function markReady() {
+  async function addAiOpponent() {
     const online = state.online;
-    if (!online) return;
-    if (Number(window.APP_STATE?.balance) < state.stake) {
-      notify('Недостатньо монет для ставки 🪙');
+    if (!online || String(online.uid) !== String(online.roomData.meta?.hostId) ||
+        Object.keys(online.roomData.players || {}).length >= 2) return;
+    const id = `bot-${Date.now()}`;
+    const bot = { id, name: 'ШІ-бот', symbol: 'O', ready: true, isBot: true };
+    if (online.localTest) {
+      online.roomData.players[id] = bot;
+      renderLobby();
+      notify('ШІ-бот приєднався');
       return;
     }
+    try {
+      const result = await online.db.ref(`tictactoeRooms/${online.roomCode}`).transaction((room) => {
+        if (!room || String(room.meta?.hostId) !== String(online.uid) ||
+            room.meta?.status !== 'waiting' || Object.keys(room.players || {}).length >= 2) return;
+        room.players[id] = bot;
+        room.meta.bank = (Number(room.meta.bank) || Number(room.meta.stake) || state.stake)
+          + (Number(room.meta.stake) || state.stake);
+        return room;
+      });
+      if (!result.committed) notify('У кімнаті немає вільного місця.');
+    } catch (error) {
+      console.error('Unable to add a tic-tac-toe AI opponent', error);
+      notify('Не вдалося додати ШІ-бота.');
+    }
+  }
+
+  function canStartOnlineRoom(room) {
+    const players = Object.values(room.players || {});
+    return players.length >= 2 && players.every((player) => player.ready || player.isBot);
+  }
+
+  async function toggleReady() {
+    const online = state.online;
+    if (!online) return;
     if (online.localTest) {
-      online.roomData.players[online.uid].ready = true;
-      if (Object.values(online.roomData.players).length === 2 &&
-          Object.values(online.roomData.players).every((player) => player.ready)) {
-        startLocalGame('test', state.stake, `${online.roomCode}-1`);
-      } else {
-        renderLobby();
-      }
+      online.roomData.players[online.uid].ready = !online.roomData.players[online.uid].ready;
+      renderLobby();
       return;
     }
 
     const reference = online.db.ref(`tictactoeRooms/${online.roomCode}`);
     try {
-      await reference.child(`players/${online.uid}/ready`).set(true);
       await reference.transaction((room) => {
-        if (!room || room.meta?.status !== 'waiting') return room;
-        const players = Object.values(room.players || {});
-        if (players.length === 2 && players.every((player) => player.ready)) {
-          const round = (Number(room.gameRound) || 0) + 1;
-          room.gameRound = round;
-          room.meta.status = 'playing';
-          room.game = {
-            matchId: `${online.roomCode}-${round}`,
-            board: Array(9).fill(null),
-            turn: room.meta.hostId,
-            winner: null,
-            line: null,
-          };
-        }
+        if (!room || room.meta?.status !== 'waiting' || !room.players?.[online.uid]) return;
+        room.players[online.uid].ready = !room.players[online.uid].ready;
         return room;
       });
     } catch (error) {
-      console.error('Unable to mark tic-tac-toe player ready', error);
-      notify('Не вдалося підтвердити готовність.');
+      console.error('Unable to update tic-tac-toe readiness', error);
+      notify('Не вдалося змінити готовність.');
+    }
+  }
+
+  async function startOnlineGame() {
+    const online = state.online;
+    if (!online || String(online.uid) !== String(online.roomData.meta?.hostId)) return;
+    if (online.localTest) {
+      if (canStartOnlineRoom(online.roomData)) startLocalGame('test', state.stake, `${online.roomCode}-1`);
+      return;
+    }
+    if (Number(window.APP_STATE?.balance) < state.stake) {
+      notify('Недостатньо монет для ставки 🪙');
+      return;
+    }
+    try {
+      await online.db.ref(`tictactoeRooms/${online.roomCode}`).transaction((room) => {
+        if (!room || String(room.meta?.hostId) !== String(online.uid) ||
+            room.meta?.status !== 'waiting' || !canStartOnlineRoom(room)) return;
+        const round = (Number(room.gameRound) || 0) + 1;
+        room.gameRound = round;
+        room.meta.status = 'playing';
+        room.game = {
+          matchId: `${online.roomCode}-${round}`,
+          board: Array(9).fill(null),
+          turn: String(room.meta.hostId),
+          winner: null,
+          line: null,
+        };
+        return room;
+      });
+    } catch (error) {
+      console.error('Unable to start tic-tac-toe room', error);
+      notify('Не вдалося почати гру.');
     }
   }
 
@@ -391,6 +514,8 @@ window.TicTacToe = (() => {
       else {
         state.screen = 'game';
         renderGame();
+        const currentPlayer = room.players?.[game.turn];
+        if (currentPlayer?.isBot && state.online?.isHost) scheduleOnlineBotMove(room);
       }
       return;
     }
@@ -491,7 +616,7 @@ window.TicTacToe = (() => {
 
   async function submitOnlineMove(index) {
     const online = state.online;
-    if (!online?.db || state.onlineTurn !== online.uid || state.board[index]) return;
+    if (!online?.db || String(state.onlineTurn) !== String(online.uid) || state.board[index]) return;
     const reference = online.db.ref(`tictactoeRooms/${online.roomCode}`);
     try {
       await reference.transaction((room) => {
@@ -506,7 +631,7 @@ window.TicTacToe = (() => {
           room.game.winner = result.winner === 'draw' ? 'draw' : online.uid;
           room.meta.status = 'finished';
         } else {
-          const opponent = Object.values(room.players).find((player) => player.id !== online.uid);
+          const opponent = Object.values(room.players).find((player) => String(player.id) !== String(online.uid));
           room.game.turn = opponent.id;
         }
         return room;
@@ -515,6 +640,58 @@ window.TicTacToe = (() => {
       console.error('Unable to submit tic-tac-toe move', error);
       notify('Не вдалося зробити хід.');
     }
+  }
+
+  function chooseBotMove(board, symbol) {
+    let best = emptyCells(board)[0];
+    let bestScore = symbol === 'O' ? -Infinity : Infinity;
+    emptyCells(board).forEach((index) => {
+      board[index] = symbol;
+      const score = minimax(board, symbol === 'O' ? 'X' : 'O', 0, symbol !== 'O');
+      board[index] = null;
+      if ((symbol === 'O' && score > bestScore) || (symbol === 'X' && score < bestScore)) {
+        bestScore = score;
+        best = index;
+      }
+    });
+    return best;
+  }
+
+  function scheduleOnlineBotMove(room) {
+    const bot = room.players?.[room.game?.turn];
+    if (!bot?.isBot || !state.online?.isHost) return;
+    const moveKey = `${room.game.matchId}:${room.game.board.join('')}`;
+    if (state.onlineBotMoveKey === moveKey) return;
+    state.onlineBotMoveKey = moveKey;
+    clearTimeout(botTimer);
+    botTimer = setTimeout(async () => {
+      const online = state.online;
+      if (!online?.db) return;
+      const index = chooseBotMove(room.game.board.slice(), bot.symbol || 'O');
+      if (index == null) return;
+      try {
+        await online.db.ref(`tictactoeRooms/${online.roomCode}`).transaction((current) => {
+          if (!current || current.meta?.status !== 'playing' ||
+              String(current.game?.turn) !== String(bot.id) ||
+              current.game.board[index] !== null) return;
+          const board = current.game.board.slice();
+          board[index] = bot.symbol || 'O';
+          const result = checkResult(board);
+          current.game.board = board;
+          current.game.line = result?.line ?? null;
+          if (result) {
+            current.game.winner = result.winner === 'draw' ? 'draw' : bot.id;
+            current.meta.status = 'finished';
+          } else {
+            current.game.turn = current.meta.hostId;
+          }
+          return current;
+        });
+      } catch (error) {
+        console.error('Unable to submit a tic-tac-toe AI move', error);
+        notify('ШІ-бот не зміг зробити хід.');
+      }
+    }, 450);
   }
 
   function renderGame() {
@@ -526,11 +703,11 @@ window.TicTacToe = (() => {
     const turnSymbol = state.turn;
     const me = online ? state.online?.roomData?.players?.[state.online.uid] : null;
     const opponent = online
-      ? Object.values(state.online?.roomData?.players || {}).find((player) => player.id !== state.online.uid)
+      ? Object.values(state.online?.roomData?.players || {}).find((player) => String(player.id) !== String(state.online.uid))
       : null;
     const localProfile = window.getCurrentPlayerProfile?.();
     const firstName = online ? me?.name || 'Ти' : localProfile?.name || (state.mode === 'local' ? 'Гравець 1' : 'Ти');
-    const secondName = online ? opponent?.name || 'Суперник' : state.mode === 'local' ? 'Гравець 2' : state.mode === 'test' ? 'Тест-суперник' : 'Розумний бот';
+    const secondName = online ? opponent?.name || 'Суперник' : state.mode === 'local' ? 'Гравець 2' : state.mode === 'test' ? 'ШІ-бот' : 'Розумний бот';
     const currentName = turnSymbol === 'X' ? firstName : secondName;
     const cells = state.board.map((value, index) => {
       const disabled = Boolean(value) || !localTurn;
@@ -678,6 +855,7 @@ window.TicTacToe = (() => {
       state.online.db.ref(`tictactoeRooms/${state.online.roomCode}`).off('value', state.online.unsubscribe);
     }
     state.online = null;
+    state.onlineBotMoveKey = null;
     const url = new URL(location.href);
     url.searchParams.delete('tictactoeRoom');
     url.searchParams.delete('room');
@@ -707,5 +885,5 @@ window.TicTacToe = (() => {
     void joinOnlineRoom(roomCode);
   });
 
-  return { init };
+  return { init, joinRoom: joinOnlineRoom };
 })();

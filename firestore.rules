@@ -30,7 +30,9 @@ service cloud.firestore {
         !hasDurakSeat(resource.data, request.auth.uid) &&
         hasDurakSeat(request.resource.data, request.auth.uid) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['meta', 'seats']) &&
-        newMeta.diff(oldMeta).affectedKeys().hasOnly(['members']) &&
+        newMeta.diff(oldMeta).affectedKeys().hasOnly(['members', 'bank']) &&
+        newMeta.get('bank', 0) == oldMeta.get('bank', 0) +
+          oldMeta.get('settings', {}).get('stake', 0) &&
         newSeats.diff(oldSeats).affectedKeys().size() == 1 &&
         newSeats.keys().size() <= newMeta.get('settings', {}).get('players', 2);
     }
@@ -38,16 +40,36 @@ service cloud.firestore {
     function validUserProfile() {
       let profile = request.resource.data;
       return profile.keys().hasOnly([
-          'id', 'name', 'username', 'balance', 'telegramId', 'photoUrl', 'updatedAt'
+          'id', 'name', 'username', 'balance', 'telegramId', 'photoUrl', 'updatedAt',
+          'diamonds', 'lastSalaryAt'
         ]) &&
-        profile.get('id', 0) is int &&
+        (profile.get('id', 0) is int || profile.get('id', '') is string) &&
         profile.get('name', '') is string &&
         profile.get('username', '') is string &&
         profile.get('balance', -1) is int &&
         profile.get('balance', -1) >= 0 &&
         profile.get('telegramId', '') is string &&
         profile.get('photoUrl', '') is string &&
-        profile.get('updatedAt', 0) is int;
+        profile.get('updatedAt', 0) is int &&
+        profile.get('diamonds', 0) is int &&
+        profile.get('diamonds', 0) >= 0 &&
+        profile.get('lastSalaryAt', 0) is int &&
+        profile.get('lastSalaryAt', 0) >= 0;
+    }
+
+    function validPlayerRoomJoin() {
+      let oldPlayers = resource.data.get('players', {});
+      let newPlayers = request.resource.data.get('players', {});
+      let oldMeta = resource.data.get('meta', {});
+      let newMeta = request.resource.data.get('meta', {});
+      return oldMeta.get('status', '') == 'waiting' &&
+        oldPlayers.get(request.auth.uid, {}).get('id', '') == '' &&
+        newPlayers.get(request.auth.uid, {}).get('id', '') == request.auth.uid &&
+        newPlayers.diff(oldPlayers).affectedKeys().hasOnly([request.auth.uid]) &&
+        newMeta.diff(oldMeta).affectedKeys().hasOnly(['bank']) &&
+        newMeta.get('bank', 0) == oldMeta.get('bank', 0) + oldMeta.get('stake', 0) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['meta', 'players']) &&
+        newPlayers.keys().size() <= 2;
     }
 
     match /users/{telegramId} {
@@ -75,7 +97,9 @@ service cloud.firestore {
 
     match /durakRooms/{roomId} {
       allow get: if signedIn();
-      allow list: if false;
+      allow list: if signedIn() &&
+        resource.data.get('meta', {}).get('isPublic', false) == true &&
+        resource.data.get('meta', {}).get('status', '') == 'waiting';
       allow create: if signedIn() &&
         request.resource.data.get('meta', {}).get('hostId', '') == request.auth.uid &&
         request.resource.data.get('meta', {}).get('members', {}).get(request.auth.uid, false) == true;
@@ -89,36 +113,32 @@ service cloud.firestore {
 
     match /tictactoeRooms/{roomId} {
       allow get: if signedIn();
-      allow list: if false;
+      allow list: if signedIn() &&
+        resource.data.get('meta', {}).get('isPublic', false) == true &&
+        resource.data.get('meta', {}).get('status', '') == 'waiting';
       allow create: if signedIn() &&
         request.resource.data.get('meta', {}).get('hostId', '') == request.auth.uid &&
         request.resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == request.auth.uid;
       allow update: if signedIn() &&
         (resource.data.get('meta', {}).get('hostId', '') == request.auth.uid ||
          resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == request.auth.uid ||
-         (resource.data.get('meta', {}).get('status', '') == 'waiting' &&
-          resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == '' &&
-          request.resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == request.auth.uid &&
-          request.resource.data.get('players', {}).keys().size() <= 2 &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['players'])));
+         validPlayerRoomJoin());
       allow delete: if signedIn() &&
         resource.data.get('meta', {}).get('hostId', '') == request.auth.uid;
     }
 
     match /battleshipRooms/{roomId} {
       allow get: if signedIn();
-      allow list: if false;
+      allow list: if signedIn() &&
+        resource.data.get('meta', {}).get('isPublic', false) == true &&
+        resource.data.get('meta', {}).get('status', '') == 'waiting';
       allow create: if signedIn() &&
         request.resource.data.get('meta', {}).get('hostId', '') == request.auth.uid &&
         request.resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == request.auth.uid;
       allow update: if signedIn() &&
         (resource.data.get('meta', {}).get('hostId', '') == request.auth.uid ||
          resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == request.auth.uid ||
-         (resource.data.get('meta', {}).get('status', '') == 'waiting' &&
-          resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == '' &&
-          request.resource.data.get('players', {}).get(request.auth.uid, {}).get('id', '') == request.auth.uid &&
-          request.resource.data.get('players', {}).keys().size() <= 2 &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['players'])));
+         validPlayerRoomJoin());
       allow delete: if signedIn() &&
         resource.data.get('meta', {}).get('hostId', '') == request.auth.uid;
     }

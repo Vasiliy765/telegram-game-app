@@ -1,4 +1,4 @@
-@import url("css/style.css?v=18");
+@import url("css/style.css?v=19");
 
 html,
 body {
@@ -46,6 +46,137 @@ body {
 .app-header {
   padding-right: clamp(12px, 4vw, 16px);
   padding-left: clamp(12px, 4vw, 16px);
+}
+
+.header-brand {
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 7px;
+}
+
+.header-actions {
+  min-width: 0;
+  flex: 0 0 auto;
+  gap: clamp(4px, 1.5vw, 10px);
+}
+
+.brand-text {
+  font-size: clamp(8px, 2.4vw, 10px);
+  letter-spacing: 0.06em;
+}
+
+.header-balance,
+.header-diamonds {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.public-rooms-section {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  margin-top: 16px;
+}
+
+.public-rooms-section h2,
+.room-label {
+  margin: 0;
+  color: #d7d7de;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.public-room-list {
+  display: grid;
+  gap: 8px;
+}
+
+.public-room-card {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid #343641;
+  border-radius: 14px;
+  background: #18181f;
+  color: #f4f4f6;
+}
+
+.public-room-info {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  text-align: left;
+}
+
+.public-room-info strong,
+.public-room-info span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.public-room-info strong {
+  white-space: nowrap;
+}
+
+.public-room-info span,
+.public-room-empty {
+  margin: 0;
+  color: #a7a7b0;
+  font-size: 12px;
+}
+
+.public-room-join {
+  flex: 0 0 auto;
+  padding: 8px 13px;
+  border: 0;
+  border-radius: 10px;
+  background: #f43f5e;
+  color: #fff;
+  font-weight: 800;
+}
+
+.public-room-join:disabled {
+  opacity: 0.5;
+}
+
+.room-slot {
+  position: relative;
+}
+
+.room-slot.ready::after,
+.ttt-avatar.ready::after,
+.bs-lobby-avatar.ready::after {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #18181f;
+  border-radius: 50%;
+  background: #34d399;
+  content: "";
+}
+
+.ttt-avatar,
+.bs-lobby-avatar {
+  position: relative;
+}
+
+.ttt-open-seat,
+.bs-open-seat {
+  cursor: pointer;
+}
+
+.ttt-open-seat {
+  border: 1px dashed #f43f5e;
+  border-radius: 14px;
+}
+
+.bs-open-seat .bs-lobby-avatar {
+  border-color: #f43f5e;
 }
 
 .btn-menu,
@@ -1453,19 +1584,31 @@ body.tictactoe-active #view-tictactoe.active {
 
 @media (max-width: 380px) {
   .header-actions {
-    gap: 5px;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .header-brand {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .brand-text {
+    font-size: 8px;
+    letter-spacing: 0.04em;
+    text-overflow: clip;
   }
 
   .header-balance {
-    padding: 0 7px;
-    font-size: 12px;
+    padding: 0 5px;
+    font-size: 11px;
   }
 
   .header-diamonds {
     gap: 3px;
-    padding-right: 4px;
-    padding-left: 6px;
-    font-size: 12px;
+    padding-right: 3px;
+    padding-left: 5px;
+    font-size: 11px;
   }
 
   .profile-currency-grid {

@@ -204,11 +204,63 @@ window.FirebaseRoomStore = (() => {
     }
   }
 
+  async function updateRoomAndWager(path, userId, stake, transform, direction) {
+    if (typeof userId !== 'string' || !userId || !Number.isSafeInteger(stake) || stake < 0) {
+      throw new TypeError('A user id and non-negative integer stake are required.');
+    }
+    if (typeof transform !== 'function') {
+      throw new TypeError('A room update function is required.');
+    }
+
+    const firestore = window.firebase.firestore();
+    const roomReference = new RoomReference(String(path).split('/').filter(Boolean));
+    const roomDocument = roomReference.documentReference();
+    const userDocument = firestore.collection('users').doc(userId);
+    let outcome = null;
+
+    await firestore.runTransaction(async (transaction) => {
+      const [roomSnapshot, userSnapshot] = await Promise.all([
+        transaction.get(roomDocument),
+        transaction.get(userDocument),
+      ]);
+      if (!roomSnapshot.exists) throw new Error('Кімнату не знайдено або її вже закрито.');
+      if (!userSnapshot.exists) throw new Error('Профіль ще не синхронізовано. Спробуйте ще раз.');
+
+      const room = roomSnapshot.data();
+      const update = transform(clone(room));
+      if (update?.alreadyJoined) {
+        outcome = { alreadyJoined: true, room };
+        return;
+      }
+      if (!update?.room) throw new Error(update?.error || 'До кімнати більше не можна приєднатися.');
+
+      const balance = userSnapshot.get('balance');
+      if (!Number.isSafeInteger(balance) || (direction < 0 && balance < stake) ||
+          !Number.isSafeInteger(balance + direction * stake)) {
+        throw new Error('Недостатньо монет для ставки 🪙');
+      }
+
+      transaction.set(roomDocument, update.room);
+      transaction.update(userDocument, {
+        balance: window.firebase.firestore.FieldValue.increment(direction * stake),
+      });
+      outcome = { alreadyJoined: false, balance: balance + direction * stake, room: update.room };
+    });
+
+    return outcome;
+  }
+
   return {
     ref(path) {
       const segments = String(path).split('/').filter(Boolean);
       if (!segments.length) throw new Error('A Firestore room path is required.');
       return new RoomReference(segments);
+    },
+    joinWithStake(path, userId, stake, transform) {
+      return updateRoomAndWager(path, userId, stake, transform, -1);
+    },
+    leaveWithRefund(path, userId, stake, transform) {
+      return updateRoomAndWager(path, userId, stake, transform, 1);
     },
   };
 })();

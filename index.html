@@ -5,14 +5,14 @@
   <meta name="theme-color" content="#0f172a">
   <title>Ігровий центр · Telegram Mini App</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <div id="app">
     <header class="app-header">
       <div class="header-brand">
         <div class="brand-icon">🎯</div>
-        <div class="brand-text">ШПИГУН / ОПЕРАТИВНИЙ ЦЕНТР</div>
+        <div class="brand-text">ШПИГУН</div>
       </div>
       <div class="header-actions">
         <div class="header-balance" aria-label="Баланс монет">🪙 <span id="balance">0</span></div>
@@ -110,9 +110,8 @@
           <div class="current-settings">Простий · 36 · 👤 4 · 🪙 10</div>
           <div class="room-requests">
             <span class="room-label">Відкриті столи</span>
-            <button class="btn btn-update">Оновити</button>
           </div>
-          <div class="empty-state">Немає відкритих кімнат</div>
+          <div class="public-room-list" id="durak-open-room-list"><p class="public-room-empty">Завантаження відкритих столів…</p></div>
         </div>
         <!-- Шторка налаштувань столу (Дурак) -->
         <div class="settings-drawer" id="durak-settings-drawer">
@@ -216,12 +215,14 @@
 
           <!-- Кнопки керування -->
           <div class="room-controls">
-            <button class="btn btn-full btn-ready" id="durak-room-ready">Готовий</button>
-            <button class="btn btn-full btn-add-test" id="durak-room-add-test">+ Тест-гравець</button>
+            <button class="btn btn-primary btn-full" id="durak-room-join" hidden>Приєднатися до гри</button>
+            <button class="btn btn-full btn-ready" id="durak-room-ready">Готово ✅</button>
+            <button class="btn btn-full btn-ready" id="durak-room-host-ready" hidden>Готово ✅</button>
+            <button class="btn btn-full btn-add-test" id="durak-room-add-test">🤖 + Додати ШІ-бота</button>
             <button class="btn btn-primary btn-full btn-invite" id="durak-room-invite">Запросити гравців</button>
             <button class="btn btn-full btn-copy" id="durak-room-copy">Скопіювати посилання</button>
             <div class="room-status" id="durak-room-status">Чекаємо готовності · 0/1</div>
-            <button class="btn btn-full btn-exit" id="durak-room-exit">Вийти</button>
+            <button class="btn btn-full btn-exit" id="durak-room-exit">Вийти зі столу</button>
           </div>
         </div>
       </section>
@@ -406,19 +407,19 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=7"></script>
-    <script src="js/firestore-room-store.js?v=7"></script>
-    <script src="js/twa.js?v=7"></script>
-    <script src="js/game.js?v=7"></script>
-    <script src="js/router.js?v=7"></script>
-    <script src="js/cards.js?v=7"></script>
-    <script src="js/durak.js?v=7"></script>
-    <script src="js/battleship.js?v=7"></script>
-    <script src="js/tictactoe.js?v=7"></script>
-    <script src="js/store.js?v=7"></script>
-    <script src="js/durak-room.js?v=7"></script>
-    <script src="js/durak-multiplayer.js?v=7"></script>
-    <script src="js/main.js?v=7"></script>
+    <script src="js/firebase-config.js?v=10"></script>
+    <script src="js/firestore-room-store.js?v=10"></script>
+    <script src="js/twa.js?v=10"></script>
+    <script src="js/game.js?v=10"></script>
+    <script src="js/router.js?v=10"></script>
+    <script src="js/cards.js?v=10"></script>
+    <script src="js/durak.js?v=10"></script>
+    <script src="js/battleship.js?v=10"></script>
+    <script src="js/tictactoe.js?v=10"></script>
+    <script src="js/store.js?v=10"></script>
+    <script src="js/durak-room.js?v=10"></script>
+    <script src="js/durak-multiplayer.js?v=10"></script>
+    <script src="js/main.js?v=10"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (window.hasIncomingRoomInvite?.('battleship')) {

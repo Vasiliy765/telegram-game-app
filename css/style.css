@@ -887,6 +887,18 @@ button:disabled,
   color: #ff8997;
 }
 
+.room-slot.joinable {
+  border-color: #f43f5e;
+  color: #fff;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 0 18px rgba(244, 63, 94, 0.3);
+}
+
+.room-controls [hidden] {
+  display: none;
+}
+
 .room-bank {
   justify-content: center;
   color: #eac56c;

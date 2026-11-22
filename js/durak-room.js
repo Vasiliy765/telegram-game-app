@@ -4,12 +4,14 @@ window.DurakRoom = (() => {
   const defaultSettings = { mode: 'Простий', deck: 36, players: 4, roomType: 'Закрита', stake: 10 };
   const adjectives = ['Сміливий', 'Тихий', 'Веселий', 'Миткий'];
   const nouns = ['Лис', 'Ведмідь', 'Вовк', 'Орел'];
+  let publicRoomsUnmount = null;
   let state = {
     roomCode: '',
     settings: { ...defaultSettings },
     slots: [],
     myId: 'me',
     isHost: true,
+    joinPending: false,
     isOnline: false,
     roomStarted: false,
     roomStatus: 'waiting',
@@ -24,6 +26,7 @@ window.DurakRoom = (() => {
     enteredGame: false,
     actionListener: null,
     leaving: false,
+    startingGame: false,
   };
 
   function randomBotName() {
@@ -81,9 +84,12 @@ window.DurakRoom = (() => {
     state.timerInterval = null;
     state.roomCode = '';
     state.slots = [];
+    state.roomMeta = null;
+    state.startingGame = false;
     state.db = null;
     state.auth = null;
     state.isOnline = false;
+    state.joinPending = false;
     state.roomStarted = false;
     state.roomStatus = 'waiting';
     state.gameAttached = false;
@@ -117,10 +123,23 @@ window.DurakRoom = (() => {
       if (slot.isHost) element.classList.add('host');
       if (slot.joined && slot.isReady) element.classList.add('ready');
       if (!slot.joined) element.classList.add('empty');
+      if (!slot.joined && state.joinPending) {
+        element.classList.add('joinable');
+        element.setAttribute('role', 'button');
+        element.tabIndex = 0;
+        element.setAttribute('aria-label', 'Приєднатися до вільного місця');
+        element.onclick = () => { void acceptRoomInvite(); };
+        element.onkeydown = (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            void acceptRoomInvite();
+          }
+        };
+      }
 
       const avatar = document.createElement('div');
       avatar.className = 'avatar-icon';
-      const avatarFallback = slot.isHost ? '👑' : slot.isBot ? '🤖' : slot.joined ? '✅' : '＋';
+      const avatarFallback = slot.isHost ? '👑' : slot.isBot ? '🤖' : slot.isReady ? '✅' : slot.joined ? '👤' : '＋';
       if (window.renderPlayerAvatar) window.renderPlayerAvatar(avatar, slot, avatarFallback);
       else avatar.textContent = avatarFallback;
       const label = document.createElement('span');
@@ -139,28 +158,51 @@ window.DurakRoom = (() => {
   }
 
   function canStart() {
-    const joined = guests();
-    return state.isHost && joined.length > 0 &&
-      joined.every((slot) => slot.isBot || slot.isReady);
+    const joined = state.slots.filter((slot) => slot.joined);
+    return state.isHost && joined.length >= 2 && joined.every((slot) => slot.isBot || slot.isReady);
   }
 
   function renderControls() {
     const startButton = $('durak-room-ready');
+    const hostReadyButton = $('durak-room-host-ready');
+    const joinButton = $('durak-room-join');
     const addButton = $('durak-room-add-test');
     const inviteButton = $('durak-room-invite');
     const copyButton = $('durak-room-copy');
+    const ownSeat = state.slots.find((slot) => String(slot.id) === String(state.myId));
     if (startButton) {
-      startButton.textContent = state.isHost ? 'Почати гру' : 'Готовий';
+      startButton.textContent = state.isHost
+        ? 'Почати гру'
+        : ownSeat?.isReady ? 'Не готовий ❌' : 'Готово ✅';
       startButton.disabled = state.roomStarted || (state.isHost && !canStart());
       startButton.classList.toggle('btn-primary', state.isHost);
+      startButton.hidden = state.joinPending || (!state.isHost && !ownSeat);
+    }
+    if (hostReadyButton) {
+      hostReadyButton.textContent = ownSeat?.isReady ? 'Не готовий ❌' : 'Готово ✅';
+      hostReadyButton.disabled = state.roomStarted || !state.isHost || !ownSeat;
+      hostReadyButton.hidden = !state.isHost;
+    }
+    if (joinButton) {
+      const emptySeat = state.slots.some((slot) => !slot.joined && !slot.isHost);
+      joinButton.hidden = !state.joinPending;
+      joinButton.disabled = state.roomStarted || !emptySeat;
+      joinButton.textContent = `Приєднатися до гри (ставка: ${state.settings.stake} 🪙)`;
     }
     if (addButton) {
       const hasEmptySlot = state.slots.some((slot) => !slot.joined && !slot.isHost);
       addButton.disabled = state.roomStarted || !state.isHost || !hasEmptySlot;
-      addButton.textContent = hasEmptySlot ? '+ Додати тест-гравця' : 'Усі місця зайняті';
+      addButton.textContent = hasEmptySlot ? '🤖 + Додати ШІ-бота' : 'Усі місця зайняті';
+      addButton.hidden = !state.isHost;
     }
-    if (inviteButton) inviteButton.disabled = !state.isOnline || state.roomStarted;
-    if (copyButton) copyButton.disabled = !state.isOnline || state.roomStarted;
+    if (inviteButton) {
+      inviteButton.disabled = !state.isOnline || state.roomStarted;
+      inviteButton.hidden = !state.isHost;
+    }
+    if (copyButton) {
+      copyButton.disabled = !state.isOnline || state.roomStarted;
+      copyButton.hidden = !state.isHost;
+    }
   }
 
   function renderRoom() {
@@ -183,20 +225,25 @@ window.DurakRoom = (() => {
     const stake = $('durak-room-stake');
     if (stake) stake.textContent = `🪙 ${state.settings.stake}`;
     const bank = $('durak-room-bank-value');
-    if (bank) bank.textContent = state.settings.stake * state.settings.players;
+    if (bank) bank.textContent = state.settings.stake * state.slots.filter((slot) => slot.joined).length;
     const type = $('durak-room-badge-type');
     if (type) type.textContent = state.settings.roomType === 'Відкрита' ? '🌐 Відкрита' : '🔒 Закрита';
 
     const status = $('durak-room-status');
     if (status) {
-      const readyCount = guests().filter((slot) => slot.isBot || slot.isReady).length;
+      const joined = state.slots.filter((slot) => slot.joined);
+      const readyCount = joined.filter((slot) => slot.isBot || slot.isReady).length;
       status.textContent = state.roomStarted
         ? 'Гра вже почалася'
+        : state.joinPending
+          ? 'Приєднайтеся, щоб зайняти вільне місце.'
+          : !state.isHost
+            ? 'Очікування початку гри...'
         : !state.isOnline
           ? 'Локальна кімната · можна додати ботів'
           : canStart()
             ? 'Усі готові — можна починати'
-            : `Очікуємо гравців · готові ${readyCount}/${guests().length || 1}`;
+            : `Очікуємо готовності · готові ${readyCount}/${joined.length}`;
     }
     renderSlots();
     renderControls();
@@ -247,6 +294,16 @@ window.DurakRoom = (() => {
       slots[position] = { ...seat, position, joined: true };
     });
     state.slots = slots;
+    if (state.isOnline && state.joinPending) {
+      const profile = window.getCurrentPlayerProfile?.() || {};
+      const ownSeat = slots.find((slot) => slot.joined && (
+        slot.id === state.myId || (profile.telegramId && slot.telegramId === profile.telegramId)
+      ));
+      if (ownSeat) {
+        state.myId = ownSeat.id;
+        state.joinPending = false;
+      }
+    }
   }
 
   function playerName() {
@@ -273,6 +330,7 @@ window.DurakRoom = (() => {
       deckSize: Number(state.settings.deck),
       mode: state.settings.mode,
       stake: state.settings.stake,
+      matchId: `${state.roomCode}-${Date.now()}`,
     };
   }
 
@@ -415,12 +473,14 @@ window.DurakRoom = (() => {
         return;
       }
       state.settings = { ...defaultSettings, ...(meta.settings || {}) };
-      state.isHost = meta.hostId === state.myId;
+      state.roomMeta = meta;
+      state.isHost = String(meta.hostId) === String(state.myId);
       state.roomStatus = meta.status;
-      state.roomStarted = meta.status !== 'waiting';
+      state.roomStarted = meta.status === 'playing' || meta.status === 'started' || meta.status === 'finished';
       state.deadline = Number(meta.deadline) || Date.now() + 30 * 60 * 1000;
       renderRoom();
-      if (state.roomStatus === 'started' || state.roomStatus === 'finished') enterOnlineGame();
+      if ((state.roomStatus === 'playing' || state.roomStatus === 'started' || state.roomStatus === 'finished') &&
+          !state.startingGame) enterOnlineGame();
     });
     listen(roomReference('seats'), 'value', (snapshot) => {
       slotsFromSnapshot(snapshot.val());
@@ -436,32 +496,49 @@ window.DurakRoom = (() => {
     return `DURAK-${Array.from(values, (value) => alphabet[value % alphabet.length]).join('')}`;
   }
 
-  function startGame(isRematch = false) {
+  async function startGame(isRematch = false) {
     if (!canStart() || (state.roomStarted && !isRematch)) return;
+    if (state.isOnline && Number(window.APP_STATE?.balance) < state.settings.stake) {
+      notify('Недостатньо монет для ставки 🪙');
+      return;
+    }
     const options = gameOptions();
     try {
       if (state.isOnline) {
+        state.startingGame = true;
+        const result = await roomReference().transaction((room) => {
+          if (!room || String(room.meta?.hostId) !== String(state.myId) ||
+              (room.meta?.status !== 'waiting' && !isRematch)) return;
+          const seats = Object.values(room.seats || {}).filter((seat) => seat?.joined);
+          if (seats.length < 2 || !seats.every((seat) => seat.isBot || seat.isReady)) return;
+          room.meta.status = 'playing';
+          return room;
+        });
+        if (!result.committed) {
+          state.startingGame = false;
+          notify('Почати можна, коли за столом є щонайменше два готові гравці.');
+          return;
+        }
         options.onStateChange = persistGameState;
         options.onRematch = () => startGame(true);
         options.hostId = state.myId;
         options.isHost = true;
       }
       window.DurakMultiplayer.startGame(options);
+      state.startingGame = false;
       state.roomStarted = true;
-      state.roomStatus = 'started';
+      state.roomStatus = 'playing';
       state.gameAttached = true;
       if (state.isOnline) {
         subscribeToActions();
-        roomReference('meta/status').set('started').catch((error) => {
-          console.error('Unable to start the Firebase room', error);
-          notify('Не вдалося запустити кімнату.');
-        });
+        await persistGameState();
       }
       if (state.timerInterval) clearInterval(state.timerInterval);
       state.timerInterval = null;
       if (window.TWA?.haptic) window.TWA.haptic();
       showGame();
     } catch (error) {
+      state.startingGame = false;
       console.error('Unable to start the Durak game', error);
       notify(error.message || 'Не вдалося запустити гру');
     }
@@ -489,7 +566,7 @@ window.DurakRoom = (() => {
           name: playerName(),
           ...playerProfileFields(),
           isHost: true,
-          isReady: true,
+          isReady: false,
           isBot: false,
           joined: true,
         }];
@@ -519,15 +596,19 @@ window.DurakRoom = (() => {
         ...playerProfileFields(),
         position: 0,
         isHost: true,
-        isReady: true,
+        isReady: false,
         isBot: false,
         joined: true,
       };
       await roomReference('meta').set({
         hostId: state.myId,
+        hostName: playerName(),
         members: { [state.myId]: true },
         settings: state.settings,
         status: 'waiting',
+        isPublic: state.settings.roomType === 'Відкрита',
+        bank: state.settings.stake,
+        createdAt: Date.now(),
         deadline: state.deadline,
       });
       await roomReference('seats/0').set(hostSeat);
@@ -564,39 +645,17 @@ window.DurakRoom = (() => {
       state.settings = { ...defaultSettings, ...(meta.settings || {}) };
       const seatsSnapshot = await roomReference('seats').once('value');
       const currentSeats = seatsSnapshot.val() || {};
-      let seat = Object.values(currentSeats).find((item) => item?.id === state.myId);
+      const profile = window.getCurrentPlayerProfile?.() || {};
+      let seat = Object.values(currentSeats).find((item) => item?.id === state.myId ||
+        (profile.telegramId && item?.telegramId === profile.telegramId));
+      if (seat) state.myId = seat.id;
+      state.joinPending = !seat;
       if (!seat) {
         if (meta.status !== 'waiting') throw new Error('Гра вже почалася — приєднатися більше не можна.');
-        let assignedPosition = -1;
-        const candidate = {
-          id: state.myId,
-          name: playerName(),
-          ...playerProfileFields(),
-          isHost: false,
-          isReady: false,
-          isBot: false,
-          joined: true,
-        };
-        const result = await roomReference().transaction((room) => {
-          assignedPosition = -1;
-          if (!room || room.meta?.status !== 'waiting') return;
-          room.seats ||= {};
-          for (let position = 1; position < state.settings.players; position += 1) {
-            if (room.seats[position]) continue;
-            assignedPosition = position;
-            room.seats[position] = { ...candidate, position };
-            room.meta.members ||= {};
-            room.meta.members[state.myId] = true;
-            return room;
-          }
-        });
-        if (result.committed && assignedPosition >= 0) {
-          seat = result.snapshot.val()?.seats?.[assignedPosition];
-        }
-        if (!seat) throw new Error('У кімнаті немає вільних місць.');
       }
+      slotsFromSnapshot(currentSeats);
       state.isOnline = true;
-      state.isHost = meta.hostId === state.myId;
+      state.isHost = String(meta.hostId) === String(state.myId);
       state.roomStatus = meta.status;
       state.roomStarted = meta.status !== 'waiting';
       state.deadline = Number(meta.deadline) || Date.now() + 30 * 60 * 1000;
@@ -616,6 +675,57 @@ window.DurakRoom = (() => {
     }
   }
 
+  async function acceptRoomInvite() {
+    if (!state.isOnline || !state.joinPending || state.roomStarted) return;
+    const profile = window.getCurrentPlayerProfile?.() || {};
+    const candidate = {
+      id: state.myId,
+      telegramId: profile.telegramId || '',
+      name: playerName(),
+      ...playerProfileFields(),
+      isHost: false,
+      isReady: false,
+      isBot: false,
+      joined: true,
+    };
+    try {
+      const result = await window.joinRoomWithStake(
+        `rooms/${state.roomCode}`,
+        state.roomCode,
+        state.settings.stake,
+        (room) => {
+          if (!room || room.meta?.status !== 'waiting') {
+            return { error: 'Гра вже почалася — приєднатися більше не можна.' };
+          }
+          room.seats ||= {};
+          const existingSeat = Object.values(room.seats).find((seat) => seat?.id === state.myId ||
+            (profile.telegramId && seat?.telegramId === profile.telegramId));
+          if (existingSeat) return { alreadyJoined: true };
+          for (let position = 1; position < state.settings.players; position += 1) {
+            if (room.seats[position]) continue;
+            room.seats[position] = { ...candidate, position };
+            room.meta.members ||= {};
+            room.meta.members[state.myId] = true;
+            room.meta.bank = (Number(room.meta.bank) || state.settings.stake) + state.settings.stake;
+            return { room };
+          }
+          return { error: 'У кімнаті немає вільних місць.' };
+        },
+      );
+      const joinedSeat = Object.values(result.room?.seats || {}).find((seat) => seat?.id === state.myId ||
+        (profile.telegramId && seat?.telegramId === profile.telegramId));
+      if (!joinedSeat) throw new Error('Не вдалося знайти ваше місце за столом.');
+      state.myId = joinedSeat.id;
+      state.joinPending = false;
+      slotsFromSnapshot(result.room.seats);
+      renderRoom();
+      if (window.TWA?.haptic) window.TWA.haptic();
+    } catch (error) {
+      console.error('Unable to join the invited Durak room', error);
+      notify(error.message || 'Не вдалося приєднатися до кімнати.');
+    }
+  }
+
   async function addTestPlayer() {
     if (!state.isHost) return;
     const slot = state.slots.find((item) => !item.joined && !item.isHost);
@@ -625,7 +735,7 @@ window.DurakRoom = (() => {
     }
     const botSeat = {
       id: `bot-${state.slots.indexOf(slot)}`,
-      name: randomBotName(),
+      name: `🤖 ШІ-бот · ${randomBotName()}`,
       position: state.slots.indexOf(slot),
       isHost: false,
       isReady: true,
@@ -634,7 +744,14 @@ window.DurakRoom = (() => {
     };
     if (state.isOnline) {
       try {
-        await roomReference(`seats/${botSeat.position}`).set(botSeat);
+        const result = await roomReference().transaction((room) => {
+          if (!room || String(room.meta?.hostId) !== String(state.myId) || room.meta?.status !== 'waiting' ||
+              room.seats?.[botSeat.position]) return;
+          room.seats[botSeat.position] = botSeat;
+          room.meta.bank = (Number(room.meta.bank) || state.settings.stake) + state.settings.stake;
+          return room;
+        });
+        if (!result.committed) notify('Вільних місць немає або стіл уже почався.');
       } catch (error) {
         console.error('Unable to add a bot to the Firebase room', error);
         notify('Не вдалося додати бота.');
@@ -648,7 +765,7 @@ window.DurakRoom = (() => {
 
   async function toggleReady() {
     const ownSlot = state.slots.find((slot) => slot.id === state.myId);
-    if (!ownSlot || ownSlot.isHost || ownSlot.isBot) return;
+    if (!ownSlot || ownSlot.isBot) return;
     const updated = { ...ownSlot, isReady: !ownSlot.isReady };
     if (state.isOnline) {
       try {
@@ -665,7 +782,7 @@ window.DurakRoom = (() => {
 
   async function leaveRoom() {
     if (state.isOnline && state.db) {
-      if (!state.isHost && state.roomStatus === 'started') {
+      if (!state.isHost && (state.roomStatus === 'started' || state.roomStatus === 'playing')) {
         notify('Під час гри вийти з кімнати не можна.');
         return;
       }
@@ -674,13 +791,22 @@ window.DurakRoom = (() => {
         if (state.isHost) await roomReference().remove();
         else {
           const position = ownPosition();
-          if (!Number.isInteger(position)) throw new Error('Вас немає серед гравців кімнати.');
-          await roomReference().transaction((room) => {
-            if (room?.seats?.[position]?.id !== state.myId) return;
-            delete room.seats[position];
-            delete room.meta?.members?.[state.myId];
-            return room;
-          });
+          if (Number.isInteger(position)) {
+            const removeSeat = (room) => {
+              if (room?.seats?.[position]?.id !== state.myId) return;
+              delete room.seats[position];
+              delete room.meta?.members?.[state.myId];
+              room.meta.bank = Math.max(0, (Number(room.meta.bank) || 0) - state.settings.stake);
+              return { room };
+            };
+            if (window.leaveRoomWithRefund) {
+              await window.leaveRoomWithRefund(`rooms/${state.roomCode}`, state.roomCode, state.settings.stake, removeSeat);
+            } else {
+              await roomReference().transaction((room) => removeSeat(room)?.room);
+            }
+          } else if (!state.joinPending) {
+            throw new Error('Вас немає серед гравців кімнати.');
+          }
         }
       } catch (error) {
         state.leaving = false;
@@ -699,23 +825,40 @@ window.DurakRoom = (() => {
 
   function bindControls() {
     const startButton = $('durak-room-ready');
+    const hostReadyButton = $('durak-room-host-ready');
+    const joinButton = $('durak-room-join');
     const addButton = $('durak-room-add-test');
     const inviteButton = $('durak-room-invite');
     const copyButton = $('durak-room-copy');
     const exitButton = $('durak-room-exit');
 
     if (startButton) startButton.onclick = state.isHost ? startGame : toggleReady;
+    if (hostReadyButton) hostReadyButton.onclick = toggleReady;
+    if (joinButton) joinButton.onclick = () => { void acceptRoomInvite(); };
     if (addButton) addButton.onclick = addTestPlayer;
     if (inviteButton) inviteButton.onclick = openInvite;
     if (copyButton) copyButton.onclick = () => { void copyLink(); };
     if (exitButton) exitButton.onclick = () => { void leaveRoom(); };
   }
 
+  function mountPublicRooms() {
+    publicRoomsUnmount?.();
+    const container = $('durak-open-room-list');
+    if (container && window.PublicRooms) {
+      publicRoomsUnmount = window.PublicRooms.mount(container, (game, roomCode) =>
+        window.openPublicRoom(game, roomCode));
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', mountPublicRooms);
+
   return {
     init,
     joinRoom,
     render: renderRoom,
     addTestPlayer,
+    acceptRoomInvite,
+    mountPublicRooms,
     startGame,
     getRoomCode: () => state.roomCode,
   };
