@@ -512,6 +512,19 @@ window.DurakRoom = (() => {
     state.actionListener = { off: () => actions.off('child_added', callback) };
   }
 
+  function showLocalReaction(emoji, output) {
+    output.textContent = emoji;
+    output.classList.remove('visible');
+    void output.offsetWidth;
+    output.classList.add('visible');
+    if (reactionTimer) clearTimeout(reactionTimer);
+    reactionTimer = setTimeout(() => {
+      output.textContent = '';
+      output.classList.remove('visible');
+      reactionTimer = null;
+    }, 1600);
+  }
+
   function bindReactionControls() {
     const panel = $('durak-mp-reactions');
     const output = $('durak-mp-reaction-output');
@@ -531,25 +544,20 @@ window.DurakRoom = (() => {
       const menu = $('durak-mp-reaction-menu');
       if (menu) menu.hidden = true;
       $('durak-mp-reaction-toggle')?.setAttribute('aria-expanded', 'false');
-      output.textContent = emoji;
-      output.classList.remove('visible');
-      void output.offsetWidth;
-      output.classList.add('visible');
-      if (reactionTimer) clearTimeout(reactionTimer);
-      reactionTimer = setTimeout(() => {
-        output.textContent = '';
-        output.classList.remove('visible');
-        reactionTimer = null;
-      }, 1600);
 
       const roomId = state.isOnline ? String(state.roomCode) : '';
-      if (!roomId) return;
+      if (!roomId) {
+        showLocalReaction(emoji, output);
+        return;
+      }
+      setActiveRoomId(roomId);
       const currentUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
       const profile = window.getCurrentPlayerProfile?.() || {};
-      const myId = currentUser?.id ?? profile.telegramId ?? state.myId;
+      const myId = [currentUser?.id, profile.telegramId, state.myId]
+        .find((candidate) => candidate != null && String(candidate).trim() !== '');
       if (myId == null) {
-        console.error('Unable to share a Durak reaction without a Telegram user ID.');
-        notify('Не вдалося визначити ваш Telegram ID для реакції.');
+        console.error('Unable to share a Durak reaction without a player ID.');
+        notify('Не вдалося визначити ваш ID для реакції.');
         return;
       }
       try {
@@ -563,6 +571,7 @@ window.DurakRoom = (() => {
           },
         }, { merge: true });
         console.log('Sent reaction:', roomId, emoji);
+        showLocalReaction(emoji, output);
       } catch (error) {
         console.error('Unable to share a Durak reaction', error);
         notify('Не вдалося надіслати реакцію.');

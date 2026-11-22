@@ -1147,9 +1147,22 @@ window.DurakMultiplayer = (() => {
 
   function showReaction(senderId, emoji) {
     if (!game || typeof senderId !== 'string' || typeof emoji !== 'string') return;
+    const sender = game.players.find((player) =>
+      String(player.id) === senderId || String(player.telegramId) === senderId);
+    if (!sender) {
+      console.warn('Durak reaction sender is not present at this table.', senderId);
+      return;
+    }
+    const senderIds = new Set([sender.id, sender.telegramId]
+      .filter((id) => id != null && String(id).trim() !== '')
+      .map(String));
     const target = [...document.querySelectorAll('.durak-mp-avatar, #durak-mp-own-avatar')]
-      .find((avatar) => avatar.dataset.playerId === senderId || avatar.dataset.telegramId === senderId);
-    if (!target) return;
+      .find((avatar) => senderIds.has(avatar.dataset.playerId) ||
+        senderIds.has(avatar.dataset.telegramId));
+    if (!target) {
+      console.warn('Durak reaction sender avatar is not rendered.', senderId);
+      return;
+    }
     const bubble = document.createElement('span');
     const localPlayer = game.players[game.localPlayerIndex];
     const isSelf = String(senderId) === String(game.localPlayerId) ||

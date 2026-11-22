@@ -11,7 +11,8 @@
     const profile = window.getCurrentPlayerProfile?.();
     const profileId = profile?.telegramId;
     const firebaseUid = window.firebase?.auth?.()?.currentUser?.uid;
-    return telegramId ?? profileId ?? firebaseUid ?? '';
+    return [telegramId, profileId, firebaseUid]
+      .find((candidate) => candidate != null && String(candidate).trim() !== '') ?? '';
   }
 
   let watchedRoomId = '';
