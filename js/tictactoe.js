@@ -300,7 +300,7 @@ window.TicTacToe = (() => {
       <main class="ttt-lobby-screen">
         <div class="ttt-lobby-card">
           <h1 class="ttt-title">Онлайн 1 на 1</h1>
-          <p class="ttt-subtitle">Ставка 🪙 ${Number(room.meta?.stake) || state.stake} · Банк 🪙 ${Number(room.meta?.bank) || (players.length * state.stake)}</p>
+          <p class="ttt-subtitle">Ставка 🪙 ${Math.round(Number(room.meta?.stake) || state.stake)} · Банк 🪙 ${Math.round(Number(room.meta?.bank) || (players.length * state.stake))}</p>
           <div class="ttt-lobby-players">
             <div class="ttt-player-card"><span class="ttt-avatar${isHost || hostPlayer?.ready ? ' ready' : ''}">${escapeHtml(hostPlayer?.isBot ? '🤖' : hostPlayer?.name?.[0] || '👑')}</span><b>${escapeHtml(hostPlayer?.name || room.meta?.hostName || 'Господар')} · ✕</b>${agentRankMarkup(hostPlayer)}<small>${isHost || hostPlayer?.ready ? '✅ Готовий' : 'Очікує'}</small></div>
             <span>VS</span>
@@ -310,7 +310,7 @@ window.TicTacToe = (() => {
           ${isHost ? '<button class="ttt-lobby-action" type="button" data-action="invite">Надіслати запрошення в чат</button><button class="ttt-lobby-action" type="button" data-action="copy">Скопіювати посилання</button>' : ''}
           ${isHost && players.length < 2 ? '<button class="ttt-lobby-action" type="button" data-action="ai">🤖 + Додати ШІ-бота</button>' : ''}
           ${state.fundingError ? '<p class="ttt-lobby-hint">Недостатньо монет для цієї ставки.</p>' : ''}
-          ${isJoinPending ? (joinAvailable ? `<button class="ttt-primary ttt-join-table" type="button" data-action="join">Приєднатися до столу (ставка: ${Number(room.meta?.stake) || state.stake} 🪙)</button>` : '<p class="ttt-lobby-hint">У кімнаті немає вільного місця.</p>') : ''}
+          ${isJoinPending ? (joinAvailable ? `<button class="ttt-primary ttt-join-table" type="button" data-action="join">Приєднатися до столу (ставка: ${Math.round(Number(room.meta?.stake) || state.stake)} 🪙)</button>` : '<p class="ttt-lobby-hint">У кімнаті немає вільного місця.</p>') : ''}
           ${!isHost && isJoined ? `<button class="ttt-primary" type="button" data-action="ready">${mine?.ready ? 'Не готовий ❌' : 'Готово ✅'}</button>` : ''}
           ${isHost ? `<button class="${canStart ? 'ttt-primary' : 'ttt-secondary'}" type="button" data-action="start" ${canStart ? '' : 'disabled'}>Почати гру</button>` : ''}
           <button class="ttt-secondary" type="button" data-action="back">${isJoinPending || isHost ? '← Назад' : 'Вийти зі столу'}</button>
@@ -356,15 +356,19 @@ window.TicTacToe = (() => {
     };
     try {
       const result = await window.joinRoomWithStake(`tictactoeRooms/${online.roomCode}`, online.roomCode,
-        Number(online.roomData.meta?.stake) || state.stake, (room) => {
+        Math.round(Number(online.roomData.meta?.stake) || state.stake), (room) => {
           if (!room || room.meta?.status !== 'waiting') return { error: 'Гра вже почалася.' };
           room.players ||= {};
           const existing = Object.values(room.players).find((item) => String(item.id) === String(online.uid) ||
             (profile.telegramId && item.telegramId === profile.telegramId));
           if (existing) return { alreadyJoined: true };
           if (Object.keys(room.players).length >= 2) return { error: 'У кімнаті вже є два гравці.' };
+          const roomStake = Math.round(Number(room.meta?.stake) || state.stake);
+          room.meta.stake = roomStake;
           room.players[online.uid] = player;
-          room.meta.bank = (Number(room.meta.bank) || Number(room.meta.stake) || state.stake) + (Number(room.meta.stake) || state.stake);
+          room.meta.bank = Math.round(
+            (Number(room.meta.bank) || roomStake) + roomStake,
+          );
           return { room };
         });
       const joinedPlayer = Object.values(result.room.players || {}).find((item) => String(item.id) === String(online.uid) ||
@@ -394,10 +398,14 @@ window.TicTacToe = (() => {
     } else if (!online.localTest && !online.isHost && !online.joinPending && online.roomData.meta?.status === 'waiting') {
       try {
         await window.leaveRoomWithRefund(`tictactoeRooms/${online.roomCode}`, online.roomCode,
-          Number(online.roomData.meta?.stake) || state.stake, (room) => {
+          Math.round(Number(online.roomData.meta?.stake) || state.stake), (room) => {
             if (!room?.players?.[online.uid]) return;
             delete room.players[online.uid];
-            room.meta.bank = Math.max(0, (Number(room.meta.bank) || 0) - (Number(room.meta.stake) || state.stake));
+            const roomStake = Math.round(Number(room.meta?.stake) || state.stake);
+            room.meta.stake = roomStake;
+            room.meta.bank = Math.round(
+              Math.max(0, (Number(room.meta.bank) || 0) - roomStake),
+            );
             return { room };
           });
       } catch (error) {
@@ -443,8 +451,11 @@ window.TicTacToe = (() => {
         if (!room || String(room.meta?.hostId) !== String(online.uid) ||
             room.meta?.status !== 'waiting' || Object.keys(room.players || {}).length >= 2) return;
         room.players[id] = bot;
-        room.meta.bank = (Number(room.meta.bank) || Number(room.meta.stake) || state.stake)
-          + (Number(room.meta.stake) || state.stake);
+        const roomStake = Math.round(Number(room.meta?.stake) || state.stake);
+        room.meta.stake = roomStake;
+        room.meta.bank = Math.round(
+          (Number(room.meta.bank) || roomStake) + roomStake,
+        );
         return room;
       });
       if (!result.committed) notify('У кімнаті немає вільного місця.');
@@ -519,7 +530,7 @@ window.TicTacToe = (() => {
   function processRoom(room) {
     if (!room || !state.online) return;
     state.online.roomData = room;
-    state.stake = Number(room.meta?.stake) || state.stake;
+    state.stake = Math.round(Number(room.meta?.stake) || state.stake);
     if (room.meta?.status === 'playing' || room.meta?.status === 'finished') {
       const game = room.game;
       const mine = room.players?.[state.online.uid];
@@ -555,7 +566,8 @@ window.TicTacToe = (() => {
 
   function startLocalGame(mode, stake, matchId = null) {
     const wagerId = matchId || `ttt-${newId()}`;
-    if (!beginWager(wagerId, stake)) {
+    const roundedStake = Math.round(Number(stake) || 0);
+    if (!beginWager(wagerId, roundedStake)) {
       if (state.online?.localTest && state.online.roomData.players[state.online.uid]) {
         state.online.roomData.players[state.online.uid].ready = false;
       }
@@ -564,7 +576,7 @@ window.TicTacToe = (() => {
       return false;
     }
     state.mode = mode;
-    state.stake = stake;
+    state.stake = roundedStake;
     state.matchId = wagerId;
     state.board = Array(9).fill(null);
     state.turn = 'X';
@@ -827,7 +839,7 @@ window.TicTacToe = (() => {
     state.screen = 'final';
     state.winnerSymbol = winner;
     const won = winner !== 'draw' && (state.mode === 'local' || winner === state.symbol);
-    const payout = winner === 'draw' ? state.stake : won ? state.stake * 2 : 0;
+    const payout = Math.round(winner === 'draw' ? state.stake : won ? state.stake * 2 : 0);
     settleWager(state.matchId, payout, state.mode === 'online');
     state.payout = payout;
     state.won = won;

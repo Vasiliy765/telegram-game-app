@@ -257,7 +257,7 @@ window.Battleship = (() => {
       const uid=existing?.id||backend.uid;
       state.online={roomCode,isHost:String(room.meta?.hostId)===String(uid),uid,joinPending:!existing,db:backend.db,
         localTest:false,unsubscribe:null,roomData:room};
-      state.mode='online';state.stake=Number(room.meta?.stake)||10;
+      state.mode='online';state.stake=Math.round(Number(room.meta?.stake)||10);
       state.screen='lobby';
       state.online.unsubscribe=ref.on('value',next=>onOnlineRoom(next.val()),error=>{
         console.error('Battleship room listener failed',error);notify('Не вдалося синхронізувати кімнату.');
@@ -315,7 +315,7 @@ window.Battleship = (() => {
     root().innerHTML=`<div class="bs-screen bs-lobby">
       <header class="bs-lobby-head"><button class="bs-back" id="bs-lobby-back">← Назад</button><span>Онлайн 1 на 1</span></header>
       <div class="bs-lobby-content">
-        <div class="bs-lobby-stake">Ставка <b>🪙 ${Number(room.meta?.stake)||state.stake}</b> · Банк <b>🪙 ${Number(room.meta?.bank)||players.length*state.stake}</b></div>
+        <div class="bs-lobby-stake">Ставка <b>🪙 ${Math.round(Number(room.meta?.stake)||state.stake)}</b> · Банк <b>🪙 ${Math.round(Number(room.meta?.bank)||players.length*state.stake)}</b></div>
         <div class="bs-lobby-slots">
           <div class="bs-lobby-player"><span class="bs-lobby-avatar${isHost||hostPlayer?.ready?' ready':''}">${escapeHtml(hostPlayer?.isBot?'🤖':hostPlayer?.avatar||'👑')}</span><strong>${escapeHtml(hostPlayer?.name||room.meta?.hostName||'Господар')}</strong>${agentRankMarkup(hostPlayer)}<small>${isHost||hostPlayer?.ready?'✅ Готовий':'Очікує'}</small></div>
           <span class="bs-vs">VS</span>
@@ -324,7 +324,7 @@ window.Battleship = (() => {
         <div class="bs-room-code">Код кімнати <strong>${state.online.roomCode}</strong></div>
         ${isHost?'<button class="bs-lobby-action primary" id="bs-invite">Надіслати запрошення в чат</button><button class="bs-lobby-action" id="bs-copy">Скопіювати посилання</button>':''}
         ${isHost&&players.length<2?'<button class="bs-lobby-action" id="bs-add-ai">🤖 + Додати ШІ-бота</button>':''}
-        ${isJoinPending?(joinAvailable?`<button class="bs-lobby-action primary" id="bs-join">Приєднатися до столу (ставка: ${Number(room.meta?.stake)||state.stake} 🪙)</button>`:'<div class="bs-online-status">У кімнаті немає вільного місця.</div>'):''}
+        ${isJoinPending?(joinAvailable?`<button class="bs-lobby-action primary" id="bs-join">Приєднатися до столу (ставка: ${Math.round(Number(room.meta?.stake)||state.stake)} 🪙)</button>`:'<div class="bs-online-status">У кімнаті немає вільного місця.</div>'):''}
         ${!isHost&&isJoined?`<button class="bs-lobby-action primary" id="bs-ready">${mine?.ready?'Не готовий ❌':'Готово ✅'}</button>`:''}
         ${isHost?`<button class="bs-lobby-action${canStart?' primary':''}" id="bs-start" ${canStart?'':'disabled'}>Почати гру</button>`:''}
         <p class="bs-lobby-hint">${isHost&&inviteUrl?'Поділися посиланням і дочекайся готовності суперника.':''}</p>
@@ -359,15 +359,17 @@ window.Battleship = (() => {
     };
     try{
       const result=await window.joinRoomWithStake(`battleshipRooms/${online.roomCode}`,online.roomCode,
-        Number(online.roomData.meta?.stake)||state.stake,current=>{
+        Math.round(Number(online.roomData.meta?.stake)||state.stake),current=>{
           if(!current||current.meta?.status!=='waiting')return {error:'Бій уже розпочався.'};
           current.players||={};
           const existing=Object.values(current.players).find(item=>String(item.id)===String(online.uid)||
             (profile.telegramId&&item.telegramId===profile.telegramId));
           if(existing)return {alreadyJoined:true};
           if(Object.keys(current.players).length>=2)return {error:'У кімнаті вже є два гравці.'};
+          const roomStake=Math.round(Number(current.meta?.stake)||state.stake);
+          current.meta.stake=roomStake;
           current.players[online.uid]=player;
-          current.meta.bank=(Number(current.meta.bank)||Number(current.meta.stake)||state.stake)+(Number(current.meta.stake)||state.stake);
+          current.meta.bank=Math.round((Number(current.meta.bank)||roomStake)+roomStake);
           return {room:current};
         });
       const joinedPlayer=Object.values(result.room.players||{}).find(item=>String(item.id)===String(online.uid)||
@@ -463,10 +465,12 @@ window.Battleship = (() => {
     }else if(!online.localTest&&!online.isHost&&!online.joinPending&&online.roomData.meta?.status==='waiting'){
       try{
         await window.leaveRoomWithRefund(`battleshipRooms/${online.roomCode}`,online.roomCode,
-          Number(online.roomData.meta?.stake)||state.stake,current=>{
+          Math.round(Number(online.roomData.meta?.stake)||state.stake),current=>{
             if(!current?.players?.[online.uid])return;
             delete current.players[online.uid];
-            current.meta.bank=Math.max(0,(Number(current.meta.bank)||0)-(Number(current.meta.stake)||state.stake));
+            const roomStake=Math.round(Number(current.meta?.stake)||state.stake);
+            current.meta.stake=roomStake;
+            current.meta.bank=Math.round(Math.max(0,(Number(current.meta.bank)||0)-roomStake));
             return {room:current};
           });
       }catch(error){
@@ -503,8 +507,9 @@ window.Battleship = (() => {
         if(!room||String(room.meta?.hostId)!==String(online.uid)||room.meta?.status!=='waiting'||
             Object.keys(room.players||{}).length>=2)return;
         room.players[id]=opponent;
-        room.meta.bank=(Number(room.meta.bank)||Number(room.meta.stake)||state.stake)
-          +(Number(room.meta.stake)||state.stake);
+        const roomStake=Math.round(Number(room.meta?.stake)||state.stake);
+        room.meta.stake=roomStake;
+        room.meta.bank=Math.round((Number(room.meta.bank)||roomStake)+roomStake);
         return room;
       });
       if(!result.committed)notify('У кімнаті немає вільного місця.');
@@ -1079,7 +1084,7 @@ window.Battleship = (() => {
 
   function finish(win){
     clearInterval(state.interval);state.screen='final';
-    const payout=win?state.stake*2:0;
+    const payout=Math.round(win?state.stake*2:0);
     if(state.wagerId&&window.settleUserWager)window.settleUserWager(state.wagerId,payout,{online:state.mode==='online'});
     state.payout=payout;
     renderFinal(win);

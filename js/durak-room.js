@@ -278,12 +278,12 @@ window.DurakRoom = (() => {
     const mode = $('durak-room-mode');
     if (mode) mode.textContent = `${state.settings.mode} · ${state.settings.deck}`;
     const stake = $('durak-room-stake');
-    if (stake) stake.textContent = `🪙 ${state.settings.stake}`;
+    if (stake) stake.textContent = `🪙 ${Math.round(Number(state.settings.stake) || 0)}`;
     const bank = $('durak-room-bank-value');
     const roomBank = Number(state.roomMeta?.bank);
     if (bank) bank.textContent = Number.isFinite(roomBank)
-      ? roomBank
-      : state.settings.stake * state.slots.filter((slot) => slot.joined).length;
+      ? Math.round(roomBank)
+      : Math.round(state.settings.stake * state.slots.filter((slot) => slot.joined).length);
     const type = $('durak-room-badge-type');
     if (type) type.textContent = state.settings.roomType === 'Відкрита' ? '🌐 Відкрита' : '🔒 Закрита';
 
@@ -656,7 +656,11 @@ window.DurakRoom = (() => {
         showView('durak');
         return;
       }
-      state.settings = { ...defaultSettings, ...(meta.settings || {}) };
+      state.settings = {
+        ...defaultSettings,
+        ...(meta.settings || {}),
+        stake: Math.round(Number(meta.settings?.stake) || defaultSettings.stake),
+      };
       state.roomMeta = meta;
       state.isHost = String(meta.hostId) === String(state.myId);
       state.roomStatus = meta.status;
@@ -740,7 +744,7 @@ window.DurakRoom = (() => {
       ...settings,
       deck: Number(settings.deck) || defaultSettings.deck,
       players: Math.min(6, Math.max(2, Number(settings.players) || defaultSettings.players)),
-      stake: Number(settings.stake) || defaultSettings.stake,
+      stake: Math.round(Number(settings.stake) || defaultSettings.stake),
     };
     state.isHost = isHost;
     state.myId = 'me';
@@ -840,7 +844,11 @@ window.DurakRoom = (() => {
       const meta = metaSnapshot.val();
       if (!meta) throw new Error('Кімнату не знайдено або її вже закрито.');
       if (meta.status === 'closed') throw new Error('Господар закрив кімнату.');
-      state.settings = { ...defaultSettings, ...(meta.settings || {}) };
+      state.settings = {
+        ...defaultSettings,
+        ...(meta.settings || {}),
+        stake: Math.round(Number(meta.settings?.stake) || defaultSettings.stake),
+      };
       const seatsSnapshot = await roomReference('seats').once('value');
       const currentSeats = seatsSnapshot.val() || {};
       const profile = window.getCurrentPlayerProfile?.() || {};
@@ -909,7 +917,9 @@ window.DurakRoom = (() => {
             room.seats[position] = { ...candidate, position };
             room.meta.members ||= {};
             room.meta.members[state.myId] = true;
-            room.meta.bank = (Number(room.meta.bank) || state.settings.stake) + state.settings.stake;
+            room.meta.bank = Math.round(
+              (Number(room.meta.bank) || state.settings.stake) + state.settings.stake,
+            );
             return { room };
           }
           return { error: 'У кімнаті немає вільних місць.' };
@@ -951,7 +961,9 @@ window.DurakRoom = (() => {
           if (!room || String(room.meta?.hostId) !== String(state.myId) || room.meta?.status !== 'waiting' ||
               room.seats?.[botSeat.position]) return;
           room.seats[botSeat.position] = botSeat;
-          room.meta.bank = (Number(room.meta.bank) || state.settings.stake) + state.settings.stake;
+          room.meta.bank = Math.round(
+            (Number(room.meta.bank) || state.settings.stake) + state.settings.stake,
+          );
           return room;
         });
         if (!result.committed) notify('Вільних місць немає або стіл уже почався.');
@@ -999,7 +1011,9 @@ window.DurakRoom = (() => {
               if (room?.seats?.[position]?.id !== state.myId) return;
               delete room.seats[position];
               delete room.meta?.members?.[state.myId];
-              room.meta.bank = Math.max(0, (Number(room.meta.bank) || 0) - state.settings.stake);
+              room.meta.bank = Math.round(
+                Math.max(0, (Number(room.meta.bank) || 0) - state.settings.stake),
+              );
               return { room };
             };
             if (window.leaveRoomWithRefund) {

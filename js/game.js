@@ -37,13 +37,14 @@
   window.parseNum = parseNum;
   const readBalance = () => {
     const value = Number(localStorage.getItem(BALANCE_KEY) || '0');
-    return isValidCurrencyBalance(value) ? value : 0;
+    const balance = Math.round(value);
+    return isValidCurrencyBalance(balance) ? balance : 0;
   };
   const isValidCurrencyBalance = (value) =>
     Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER;
   const formatCurrency = (value) => new Intl.NumberFormat('uk-UA', {
-    maximumFractionDigits: 2,
-  }).format(value);
+    maximumFractionDigits: 0,
+  }).format(Math.round(Number(value) || 0));
   let anonymousAuthPromise = null;
   let playerDocumentRef = null;
   let playerDocumentReadyPromise = null;
@@ -210,7 +211,7 @@
           roomCode: document.id,
           hostName: meta.hostName || host?.name || 'Гравець',
           mode: isDurak ? `${settings.mode || 'Простий'} · ${settings.deck || 36}` : 'Онлайн 1 на 1',
-          stake: Number(isDurak ? settings.stake : meta.stake) || 0,
+          stake: Math.round(Number(isDurak ? settings.stake : meta.stake) || 0),
           playerCount: players.length,
           capacity: Number(isDurak ? settings.players : 2) || 2,
           createdAt: Number(meta.createdAt) || 0,
@@ -432,7 +433,7 @@
 
   function upgradeBonus(key, level) {
     if (key === 'diplomat') return `+${level * 10}% до виплати «Зп»`;
-    if (key === 'luck') return `+${formatCurrency(level * 2.5)}% кешбеку за поразку онлайн`;
+    if (key === 'luck') return `+${level * 2.5}% кешбеку за поразку онлайн`;
     if (key === 'rank') return `Титул «${window.getAgentRankTitle(level)}»`;
     return `+${level * 30} 🪙 кожні 24 години`;
   }
@@ -529,7 +530,7 @@
         if (balance < price) throw new Error('Недостатньо монет для покращення.');
 
         const nextUpgrades = { ...upgrades, [key]: level + 1 };
-        const nextBalance = Math.round((balance - price) * 100) / 100;
+        const nextBalance = Math.round(balance - price);
         const lastNetworkClaim = normalizeNetworkClaim(snapshot.get('lastNetworkClaim'));
         transaction.update(userRef, {
           ...firestoreProfileFields(),
@@ -572,7 +573,7 @@
         const amount = upgrades.network * 30;
         const balance = parseNum(snapshot.get('balance'));
         if (!isValidCurrencyBalance(balance)) throw new Error('Некоректний баланс монет у Firestore.');
-        const nextBalance = Math.round((balance + amount) * 100) / 100;
+        const nextBalance = Math.round(balance + amount);
         transaction.update(userRef, {
           ...firestoreProfileFields(),
           balance: nextBalance,
@@ -615,8 +616,9 @@
       .map((document) => {
         const player = document.data();
         const balance = Number(player?.balance);
-        if (!isValidCurrencyBalance(balance)) return null;
-        return { ...player, firebaseId: document.id, balance };
+        const roundedBalance = Math.round(balance);
+        if (!isValidCurrencyBalance(roundedBalance)) return null;
+        return { ...player, firebaseId: document.id, balance: roundedBalance };
       })
       .filter(Boolean);
     entries.sort((a, b) => b.balance - a.balance);
@@ -703,9 +705,19 @@
       return;
     }
 
-    playerDocumentRef.update({
-      ...firestoreProfileFields(),
-      balance: window.firebase.firestore.FieldValue.increment(delta),
+    window.firebase.firestore().runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(playerDocumentRef);
+      if (!snapshot.exists) throw new Error('Firestore user document does not exist.');
+      const savedBalance = parseNum(snapshot.get('balance'));
+      if (!isValidCurrencyBalance(savedBalance)) {
+        throw new Error('Invalid balance in Firestore.');
+      }
+      const balance = Math.round(savedBalance + delta);
+      if (!isValidCurrencyBalance(balance)) throw new Error('Balance exceeds the supported range.');
+      transaction.update(playerDocumentRef, {
+        ...firestoreProfileFields(),
+        balance,
+      });
     }).catch(async (error) => {
       console.error('Unable to update the Firestore user balance.', error);
       try {
@@ -789,7 +801,7 @@
         if (!isValidCurrencyBalance(savedBalance)) {
           throw new Error(`Invalid balance in Firestore user document ${userId}.`);
         }
-        profileFields.balance = Math.round(savedBalance * 100) / 100;
+        profileFields.balance = Math.round(savedBalance);
         if (snapshot.get('diamonds') == null) profileFields.diamonds = 0;
         const knownSkins = window.CARDS?.CARD_SKIN_KEYS || [DEFAULT_CARD_SKIN];
         const savedSkins = snapshot.get('ownedSkins');
@@ -844,8 +856,9 @@
     if (!isValidCurrencyBalance(balance)) {
       throw new Error(`Invalid balance in Firestore user document ${userId}.`);
     }
-    applyRemoteBalance(balance, 'firestore-refresh');
-    return balance;
+    const roundedBalance = Math.round(balance);
+    applyRemoteBalance(roundedBalance, 'firestore-refresh');
+    return roundedBalance;
   };
 
   function renderBalance() {
@@ -862,11 +875,16 @@
   }
 
   function applyRemoteBalance(balance, source) {
-    window.APP_STATE.balance = balance;
-    localStorage.setItem(BALANCE_KEY, String(balance));
+    const roundedBalance = Math.round(Number(balance) || 0);
+    if (!isValidCurrencyBalance(roundedBalance)) {
+      console.error('Unable to apply an invalid coin balance.', balance);
+      return;
+    }
+    window.APP_STATE.balance = roundedBalance;
+    localStorage.setItem(BALANCE_KEY, String(roundedBalance));
     renderBalance();
     window.dispatchEvent(new CustomEvent('userbalancechange', {
-      detail: { balance, delta: 0, source },
+      detail: { balance: roundedBalance, delta: 0, source },
     }));
   }
 
@@ -1027,14 +1045,14 @@
 
   window.updateUserBalance = function updateUserBalance(delta) {
     if (window.APP_STATE.isBanned) return false;
-    const roundedDelta = Math.round(Number(delta) * 100) / 100;
-    if (!Number.isFinite(delta) || !Number.isSafeInteger(Math.round(Number(delta) * 100)) ||
-        Math.abs(Number(delta) - roundedDelta) > 1e-8) {
-      throw new TypeError('Balance change must be a safe amount with at most two decimal places.');
+    const numericDelta = Number(delta);
+    const roundedDelta = Math.round(numericDelta);
+    if (!Number.isFinite(numericDelta) || !Number.isSafeInteger(roundedDelta)) {
+      throw new TypeError('Balance change must round to a safe integer.');
     }
 
-    const balance = Number(window.APP_STATE?.balance);
-    const nextBalance = Math.round((balance + roundedDelta) * 100) / 100;
+    const balance = Math.round(Number(window.APP_STATE?.balance) || 0);
+    const nextBalance = Math.round(balance + roundedDelta);
     if (!isValidCurrencyBalance(nextBalance)) return false;
 
     localStorage.setItem(BALANCE_KEY, String(nextBalance));
@@ -1147,9 +1165,9 @@
     if (record.settled) return true;
     const luckLevel = online ? window.APP_STATE.upgrades.luck : 0;
     const cashback = payout === 0
-      ? Math.round((Number(record.stake) * luckLevel * 0.025) * 100) / 100
+      ? Math.round(Number(record.stake) * luckLevel * 0.025)
       : 0;
-    const totalPayout = Math.round((payout + cashback) * 100) / 100;
+    const totalPayout = Math.round(payout + cashback);
     if (totalPayout > 0 && !window.updateUserBalance(totalPayout)) return false;
     record.settled = true;
     record.payout = payout;

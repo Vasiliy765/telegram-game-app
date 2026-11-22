@@ -57,8 +57,8 @@
       if (!sel) return;
       ov.querySelector('#sa-un').textContent = sel.name || 'Гравець';
       ov.querySelector('#sa-um').textContent = (sel.username ? '@' + sel.username.replace(/^@/, '') : 'без username') + ' • ID: ' + sel.id;
-      ov.querySelector('#sa-uc').textContent = (sel.balance || 0) + ' 🪙';
-      ov.querySelector('#sa-ud').textContent = (sel.diamonds || 0) + ' 💎';
+      ov.querySelector('#sa-uc').textContent = `${Math.round(Number(sel.balance) || 0)} 🪙`;
+      ov.querySelector('#sa-ud').textContent = `${Math.round(Number(sel.diamonds) || 0)} 💎`;
       const isVip = Number(sel.vipUntil || 0) > Date.now();
       const isBanned = sel.banned === true;
       ov.querySelector('#sa-us').textContent = `VIP: ${isVip ? 'активний' : 'неактивний'} · Блокування: ${isBanned ? 'заблоковано' : 'ні'}`;
@@ -148,7 +148,7 @@
         st.textContent = 'Введіть ненульове ціле число.';
         return;
       }
-      const next = Math.max(0, Number(sel[field] || 0) + val);
+      const next = Math.max(0, Math.round(Number(sel[field]) || 0) + val);
       try {
         const db = getFirestore();
         if (!db) {

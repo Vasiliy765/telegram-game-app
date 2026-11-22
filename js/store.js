@@ -29,7 +29,7 @@ window.Store = (() => {
   function syncFromAppState() {
     const appState = window.APP_STATE || {};
     state = {
-      balance: Number(appState.balance) || 0,
+      balance: Math.round(Number(appState.balance) || 0),
       diamonds: Number(appState.diamonds) || 0,
       ownedSkins: Array.isArray(appState.ownedSkins) ? appState.ownedSkins : [DEFAULT_SKIN],
       activeSkin: appState.activeSkin || DEFAULT_SKIN,
@@ -62,7 +62,7 @@ window.Store = (() => {
         (field === 'diamonds' && !Number.isSafeInteger(value))) {
       throw new Error(`Некоректний баланс ${field} у Firestore.`);
     }
-    return value;
+    return field === 'balance' ? Math.round(value) : value;
   }
 
   function applyPurchaseResult(result) {
@@ -94,7 +94,7 @@ window.Store = (() => {
         if (balance + offer.coins > Number.MAX_SAFE_INTEGER) {
           throw new Error('Баланс монет перевищить допустиме значення.');
         }
-        const newBalance = Math.round((balance + offer.coins) * 100) / 100;
+        const newBalance = Math.round(balance + offer.coins);
         const newDiamonds = diamonds - offer.diamonds;
         transaction.update(userRef, {
           diamonds: newDiamonds,
@@ -146,8 +146,8 @@ window.Store = (() => {
             throw new Error(`Недостатньо ${skin.currency === 'diamonds' ? '💎' : '🪙'} для покупки.`);
           }
           const newBalance = skin.currency === 'balance'
-            ? Math.round((currentBalance - skin.cost) * 100) / 100
-            : Math.round(readBalance(snapshot, 'balance') * 100) / 100;
+            ? Math.round(currentBalance - skin.cost)
+            : Math.round(readBalance(snapshot, 'balance'));
           const newDiamonds = skin.currency === 'diamonds'
             ? currentBalance - skin.cost
             : readBalance(snapshot, 'diamonds');
@@ -213,7 +213,7 @@ window.Store = (() => {
         if (diamonds < VIP_COST) throw new Error('Для VIP потрібно 40 💎.');
         const vipUntil = Date.now() + VIP_DURATION_MS;
         const newDiamonds = diamonds - VIP_COST;
-        const newBalance = Math.round(balance * 100) / 100;
+        const newBalance = Math.round(balance);
         transaction.update(userRef, {
           diamonds: newDiamonds,
           balance: newBalance,
@@ -318,7 +318,7 @@ window.Store = (() => {
   });
   $('store-vip-buy')?.addEventListener('click', () => { void buyVip(); });
   window.addEventListener('userbalancechange', (event) => {
-    state.balance = event.detail.balance;
+    state.balance = Math.round(Number(event.detail.balance) || 0);
     renderSkins();
   });
   window.addEventListener('userdiamondschange', (event) => {

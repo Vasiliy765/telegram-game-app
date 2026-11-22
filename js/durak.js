@@ -23,7 +23,7 @@ window.Durak = (() => {
     state.gameOver = true;
     state.winner = winner;
     state.phase = 'gameover';
-    const payout = winner === 'player' ? state.stake * 2 : winner === null ? state.stake : 0;
+    const payout = Math.round(winner === 'player' ? state.stake * 2 : winner === null ? state.stake : 0);
     if (state.wagerId && window.settleUserWager) {
       window.settleUserWager(state.wagerId, payout);
     }
@@ -324,7 +324,7 @@ window.Durak = (() => {
       return;
     }
     state.wagerId = wagerId;
-    state.stake = Number(stake);
+    state.stake = Math.round(Number(stake));
     state.mode = typeof mode === 'string' ? mode : state.mode;
     const deck = C.newDeck();
     state.trump = deck.pop();

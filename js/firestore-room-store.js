@@ -235,19 +235,21 @@ window.FirebaseRoomStore = (() => {
       if (!update?.room) throw new Error(update?.error || 'До кімнати більше не можна приєднатися.');
 
       const userData = userSnapshot.data();
-      const balance = Number(userData.balance || 0);
+      const currentBalance = Number(userData.balance ?? 0);
+      const balance = Math.round(currentBalance);
+      const nextBalance = Math.round(balance + direction * stake);
       if (!Number.isFinite(balance) || balance < 0 || balance > Number.MAX_SAFE_INTEGER ||
           (direction < 0 && balance < stake) ||
-          !Number.isFinite(balance + direction * stake) || balance + direction * stake < 0 ||
-          balance + direction * stake > Number.MAX_SAFE_INTEGER) {
+          !Number.isFinite(currentBalance) || currentBalance < 0 ||
+          !Number.isSafeInteger(nextBalance) || nextBalance < 0) {
         throw new Error('Недостатньо монет для ставки 🪙');
       }
 
       transaction.set(roomDocument, update.room);
       transaction.update(userDocument, {
-        balance: balance + direction * stake,
+        balance: nextBalance,
       });
-      outcome = { alreadyJoined: false, balance: balance + direction * stake, room: update.room };
+      outcome = { alreadyJoined: false, balance: nextBalance, room: update.room };
     });
 
     return outcome;

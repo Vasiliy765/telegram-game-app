@@ -124,7 +124,8 @@ function escapeHtml(value) {
 }
 
 function formatCoins(value) {
-  return new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 2 }).format(value);
+  return new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 0 })
+    .format(Math.round(Number(value) || 0));
 }
 
 async function ensureUser(user) {
@@ -383,10 +384,11 @@ async function sendSalary(chatId, user) {
         ? Math.min(10, Math.max(0, Math.floor(Number(upgrades.diplomat))))
         : 0;
       const vipMultiplier = Number(snapshot.get('vipUntil') || 0) > now ? 2 : 1;
-      const reward = Math.round(baseReward * vipMultiplier * (1 + diplomatLevel * 0.1) * 100) / 100;
-      const balance = snapshot.get('balance');
+      const reward = Math.round(baseReward * vipMultiplier * (1 + diplomatLevel * 0.1));
+      const balance = Math.round(Number(snapshot.get('balance')) || 0);
+      const nextBalance = Math.round(balance + reward);
       transaction.update(userRef, {
-        balance: admin.firestore.FieldValue.increment(reward),
+        balance: nextBalance,
         diamonds: snapshot.get('diamonds') == null ? 0 : snapshot.get('diamonds'),
         lastSalaryAt: now,
         name: displayName(user),
@@ -396,9 +398,7 @@ async function sendSalary(chatId, user) {
         kind: 'paid',
         reward,
         baseReward,
-        balance: Math.round(
-          ((typeof balance === 'number' && Number.isFinite(balance) ? balance : 0) + reward) * 100,
-        ) / 100,
+        balance: nextBalance,
       };
     }
 
@@ -968,8 +968,8 @@ async function beginChallenge(query, challengeId, actorId) {
       return { kind: 'missing-user' };
     }
 
-    const creatorBalance = Number(creatorSnapshot.get('balance')) || 0;
-    const accepterBalance = Number(accepterSnapshot.get('balance')) || 0;
+    const creatorBalance = Math.round(Number(creatorSnapshot.get('balance')) || 0);
+    const accepterBalance = Math.round(Number(accepterSnapshot.get('balance')) || 0);
     if (creatorBalance < challenge.stake || accepterBalance < challenge.stake) {
       return { kind: 'insufficient' };
     }
@@ -982,14 +982,20 @@ async function beginChallenge(query, challengeId, actorId) {
 
     if (challenge.game === 'coin') {
       const winnerId = coinWinner === 'creator' ? challenge.creatorId : actorId;
-      const payout = challenge.stake * 2 * 0.98;
+      const totalPot = challenge.stake * 2;
+      const fee = Math.round(totalPot * 0.02);
+      const payout = Math.round(totalPot - fee);
       transaction.update(creatorRef, {
-        balance: creatorBalance - challenge.stake
-          + (winnerId === challenge.creatorId ? payout : 0),
+        balance: Math.round(
+          creatorBalance - challenge.stake
+            + (winnerId === challenge.creatorId ? payout : 0),
+        ),
       });
       transaction.update(accepterRef, {
-        balance: accepterBalance - challenge.stake
-          + (winnerId === actorId ? payout : 0),
+        balance: Math.round(
+          accepterBalance - challenge.stake
+            + (winnerId === actorId ? payout : 0),
+        ),
       });
       transaction.update(challengeRef, {
         status: 'completed',
@@ -1043,8 +1049,12 @@ async function settleDice(challengeId, creatorRoll, accepterRoll) {
     }
 
     if (creatorRoll === accepterRoll) {
-      transaction.update(creatorRef, { balance: creatorSnapshot.get('balance') + challenge.stake });
-      transaction.update(accepterRef, { balance: accepterSnapshot.get('balance') + challenge.stake });
+      transaction.update(creatorRef, {
+        balance: Math.round((Number(creatorSnapshot.get('balance')) || 0) + challenge.stake),
+      });
+      transaction.update(accepterRef, {
+        balance: Math.round((Number(accepterSnapshot.get('balance')) || 0) + challenge.stake),
+      });
       transaction.update(challengeRef, { status: 'completed', result: 'draw' });
       return { kind: 'draw', challenge };
     }
@@ -1052,9 +1062,11 @@ async function settleDice(challengeId, creatorRoll, accepterRoll) {
     const creatorWon = creatorRoll > accepterRoll;
     const winnerRef = creatorWon ? creatorRef : accepterRef;
     const winnerSnapshot = creatorWon ? creatorSnapshot : accepterSnapshot;
-    const payout = challenge.stake * 2 * 0.98;
+    const totalPot = challenge.stake * 2;
+    const fee = Math.round(totalPot * 0.02);
+    const payout = Math.round(totalPot - fee);
     transaction.update(winnerRef, {
-      balance: winnerSnapshot.get('balance') + payout,
+      balance: Math.round((Number(winnerSnapshot.get('balance')) || 0) + payout),
     });
     transaction.update(challengeRef, {
       status: 'completed',
@@ -1092,8 +1104,12 @@ async function refundFailedDice(challengeId) {
       throw new Error(`Missing player profile while refunding challenge ${challengeId}`);
     }
 
-    transaction.update(creatorRef, { balance: creatorSnapshot.get('balance') + challenge.stake });
-    transaction.update(accepterRef, { balance: accepterSnapshot.get('balance') + challenge.stake });
+    transaction.update(creatorRef, {
+      balance: Math.round((Number(creatorSnapshot.get('balance')) || 0) + challenge.stake),
+    });
+    transaction.update(accepterRef, {
+      balance: Math.round((Number(accepterSnapshot.get('balance')) || 0) + challenge.stake),
+    });
     transaction.update(challengeRef, { status: 'failed' });
     return true;
   });

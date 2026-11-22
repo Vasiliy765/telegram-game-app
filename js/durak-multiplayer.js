@@ -319,8 +319,9 @@ window.DurakMultiplayer = (() => {
 
   function loadSnapshot(snapshotData, localPlayerId, hand = [], onAction) {
     if (!snapshotData || !Array.isArray(snapshotData.players)) return false;
+    const stake = Math.round(Number(snapshotData.stake) || 0);
     if (snapshotData.matchId && window.beginUserWager &&
-        !window.beginUserWager(snapshotData.matchId, Number(snapshotData.stake) || 0)) return false;
+        !window.beginUserWager(snapshotData.matchId, stake)) return false;
     if (botTimer) clearTimeout(botTimer);
     timerVersion += 1;
     const previousGame = game;
@@ -350,6 +351,7 @@ window.DurakMultiplayer = (() => {
     const trump = snapshotData.trump || snapshotData.trumpCard;
     game = {
       ...snapshotData,
+      stake,
       players,
       deck: Array(Number(snapshotData.deckCount) || 0).fill(null),
       trump: { ...trump },
@@ -1255,14 +1257,16 @@ window.DurakMultiplayer = (() => {
 
   function restoreState(savedState, localPlayerId, onStateChange, options = {}) {
     if (!savedState || !Array.isArray(savedState.players)) return false;
+    const stake = Math.round(Number(savedState.stake) || 0);
     if (savedState.matchId && window.beginUserWager &&
-        !window.beginUserWager(savedState.matchId, Number(savedState.stake) || 0)) return false;
+        !window.beginUserWager(savedState.matchId, stake)) return false;
     if (botTimer) clearTimeout(botTimer);
     timerVersion += 1;
     const localPlayerIndex = savedState.players.findIndex((player) => player.id === localPlayerId);
     if (localPlayerIndex === -1) return false;
     game = {
       ...savedState,
+      stake,
       players: savedState.players.map((player) => ({
         ...player,
         hand: (player.hand || []).map((card) => ({ ...card })),
