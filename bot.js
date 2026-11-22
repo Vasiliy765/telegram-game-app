@@ -385,18 +385,18 @@ function httpError(statusCode, message) {
 
 function validateTelegramInitData(initData) {
   if (typeof initData !== 'string' || !initData) {
-    throw httpError(401, 'Telegram authentication is required.');
+    throw httpError(401, 'Telegram initData is missing.');
   }
 
   const params = new URLSearchParams(initData);
   const receivedHash = params.get('hash');
   if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash)) {
-    throw httpError(401, 'Invalid Telegram authentication data.');
+    throw httpError(401, 'Telegram initData hash is missing or malformed.');
   }
 
   const entries = [...params.entries()];
   if (new Set(entries.map(([key]) => key)).size !== entries.length) {
-    throw httpError(401, 'Invalid Telegram authentication data.');
+    throw httpError(401, 'Telegram initData contains duplicate parameters.');
   }
   params.delete('hash');
   const dataCheckString = [...params.entries()]
@@ -412,7 +412,7 @@ function validateTelegramInitData(initData) {
   const suppliedHash = Buffer.from(receivedHash, 'hex');
   if (suppliedHash.length !== expectedHash.length
       || !crypto.timingSafeEqual(suppliedHash, expectedHash)) {
-    throw httpError(401, 'Invalid Telegram authentication data.');
+    throw httpError(401, 'Telegram initData hash does not match.');
   }
 
   const authDate = Number(params.get('auth_date'));
@@ -463,7 +463,10 @@ async function createDiamondsInvoiceLink(userId, packageId) {
     } catch (updateError) {
       console.error('Failed to mark a diamond invoice as failed:', updateError);
     }
-    throw error;
+    const detail = error instanceof Error && error.message
+      ? error.message.replaceAll(BOT_TOKEN, '[redacted]')
+      : 'Unknown Telegram API error.';
+    throw httpError(502, `Telegram createInvoiceLink failed: ${detail}`);
   }
 }
 
