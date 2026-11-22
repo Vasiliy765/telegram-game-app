@@ -164,11 +164,14 @@ window.DurakRoom = (() => {
       if (window.renderPlayerAvatar) window.renderPlayerAvatar(avatar, slot, avatarFallback);
       else avatar.textContent = avatarFallback;
       const label = document.createElement('span');
-      label.textContent = slot.isHost
+      const playerLabel = slot.isHost
         ? slot.name || 'Господар'
         : slot.joined
           ? slot.name || 'Гравець'
           : 'Вільне місце';
+      label.textContent = Number(slot.vipUntil) > Date.now()
+        ? `👑 ${playerLabel}`
+        : playerLabel;
       element.append(avatar, label);
       container.appendChild(element);
     });
@@ -353,16 +356,29 @@ window.DurakRoom = (() => {
       telegramId: profile.telegramId || '',
       username: profile.username || '',
       photoUrl: profile.photoUrl || '',
+      activeSkin: profile.activeSkin || 'classic-red',
+      vipUntil: Number(profile.vipUntil) || 0,
     };
   }
 
   function gameOptions() {
+    const currentProfile = window.getCurrentPlayerProfile?.() || {};
     return {
       players: state.slots
         .filter((slot) => slot.joined)
-        .map(({ id, name, isBot, telegramId, username, photoUrl }) => ({
-          id, name, isBot, telegramId, username, photoUrl,
-        })),
+        .map((slot) => {
+          const ownProfile = slot.id === state.myId ? currentProfile : {};
+          return {
+            id: slot.id,
+            name: slot.name,
+            isBot: slot.isBot,
+            telegramId: slot.telegramId,
+            username: slot.username,
+            photoUrl: slot.photoUrl,
+            activeSkin: ownProfile.activeSkin || slot.activeSkin || 'classic-red',
+            vipUntil: Number(ownProfile.vipUntil ?? slot.vipUntil) || 0,
+          };
+        }),
       localPlayerId: state.myId,
       deckSize: Number(state.settings.deck),
       mode: state.settings.mode,
@@ -928,6 +944,19 @@ window.DurakRoom = (() => {
   function ownPosition() {
     return state.slots.find((slot) => slot.id === state.myId)?.position;
   }
+
+  window.addEventListener('usershopprofilechange', (event) => {
+    if (!state.isOnline || !state.roomCode) return;
+    const position = ownPosition();
+    const ownSlot = state.slots.find((slot) => slot.id === state.myId);
+    if (!Number.isInteger(position) || !ownSlot) return;
+    const { activeSkin, vipUntil } = event.detail;
+    if (ownSlot.activeSkin === activeSkin && Number(ownSlot.vipUntil) === Number(vipUntil)) return;
+    void roomReference(`seats/${position}`).update({ activeSkin, vipUntil }).catch((error) => {
+      console.error('Unable to synchronize the player shop profile to the Durak room.', error);
+      notify('Не вдалося оновити скін або VIP за ігровим столом.');
+    });
+  });
 
   function bindControls() {
     const startButton = $('durak-room-ready');

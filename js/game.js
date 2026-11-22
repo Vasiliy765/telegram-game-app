@@ -5,6 +5,7 @@
 
   const BALANCE_KEY = 'tga_balance';
   const DIAMONDS_API_URL = 'https://telegram-game-app.onrender.com';
+  const DEFAULT_CARD_SKIN = 'classic-red';
   const readBalance = () => {
     const value = Number(localStorage.getItem(BALANCE_KEY) || '0');
     return isValidCurrencyBalance(value) ? value : 0;
@@ -16,11 +17,15 @@
   }).format(value);
   let anonymousAuthPromise = null;
   let playerDocumentRef = null;
+  let playerDocumentReadyPromise = null;
   let pendingBalanceDelta = 0;
 
   window.APP_STATE = window.APP_STATE || {};
   window.APP_STATE.balance = readBalance();
   window.APP_STATE.diamonds = 0;
+  window.APP_STATE.ownedSkins = [DEFAULT_CARD_SKIN];
+  window.APP_STATE.activeSkin = DEFAULT_CARD_SKIN;
+  window.APP_STATE.vipUntil = 0;
 
   let roomInviteResolved = false;
   let roomInvite = null;
@@ -213,6 +218,9 @@
         || (username ? `@${username}` : `Гравець ${telegramId || ''}`.trim()),
       username: username ? `@${username}` : '',
       photoUrl: typeof user?.photo_url === 'string' ? user.photo_url : '',
+      activeSkin: window.APP_STATE.activeSkin || DEFAULT_CARD_SKIN,
+      vipUntil: Number(window.APP_STATE.vipUntil) || 0,
+      isVip: Number(window.APP_STATE.vipUntil) > Date.now(),
     };
   }
 
@@ -270,12 +278,19 @@
     const name = document.getElementById('profile-name');
     const username = document.getElementById('profile-username');
     const id = document.getElementById('profile-user-id');
-    if (name) name.textContent = profile.name;
+    if (name) name.textContent = profile.isVip ? `👑 ${profile.name}` : profile.name;
     if (username) {
       username.textContent = profile.username;
       username.hidden = !profile.username;
     }
     if (id) id.textContent = profile.telegramId || '—';
+    const vipStatus = document.getElementById('profile-vip-status');
+    if (vipStatus) {
+      vipStatus.hidden = !profile.isVip;
+      vipStatus.textContent = profile.isVip
+        ? `👑 VIP-статус активний до ${new Date(profile.vipUntil).toLocaleDateString('uk-UA')}`
+        : '';
+    }
     window.renderPlayerAvatar(document.getElementById('profile-avatar'), profile);
     window.renderPlayerAvatar(document.getElementById('header-avatar'), profile);
   }
@@ -323,7 +338,9 @@
       const details = document.createElement('span');
       details.className = 'leaderboard-details';
       const name = document.createElement('strong');
-      name.textContent = player.name || 'Гравець';
+      name.textContent = Number(player.vipUntil) > Date.now()
+        ? `👑 ${player.name || 'Гравець'}`
+        : player.name || 'Гравець';
       const identifier = document.createElement('small');
       identifier.textContent = [
         player.username,
@@ -420,6 +437,7 @@
       } else {
         console.error(`Invalid diamonds balance in Firestore user document ${userId}.`);
       }
+      applyRemoteShopProfile(snapshot.data());
     }, (error) => {
       console.error('Unable to listen for Firestore user balance changes.', error);
       setLeaderboardMessage('Не вдалося підключити синхронізацію балансу.');
@@ -433,10 +451,23 @@
           ...firestoreProfileFields(),
           balance: 100,
           diamonds: 0,
+          ownedSkins: [DEFAULT_CARD_SKIN],
+          activeSkin: DEFAULT_CARD_SKIN,
+          vipUntil: 0,
         });
       } else {
         const profileFields = firestoreProfileFields();
         if (snapshot.get('diamonds') == null) profileFields.diamonds = 0;
+        const knownSkins = window.CARDS?.CARD_SKIN_KEYS || [DEFAULT_CARD_SKIN];
+        const savedSkins = snapshot.get('ownedSkins');
+        const ownedSkins = Array.isArray(savedSkins)
+          ? savedSkins.filter((skin) => knownSkins.includes(skin))
+          : [];
+        profileFields.ownedSkins = [...new Set([DEFAULT_CARD_SKIN, ...ownedSkins])];
+        profileFields.activeSkin = profileFields.ownedSkins.includes(snapshot.get('activeSkin'))
+          ? snapshot.get('activeSkin')
+          : DEFAULT_CARD_SKIN;
+        if (snapshot.get('vipUntil') == null) profileFields.vipUntil = 0;
         transaction.set(userDocumentRef, profileFields, { merge: true });
       }
     });
@@ -511,6 +542,42 @@
       detail: { diamonds, source: 'firestore' },
     }));
   }
+
+  function applyRemoteShopProfile(profile) {
+    const knownSkins = window.CARDS?.CARD_SKIN_KEYS || [DEFAULT_CARD_SKIN];
+    const savedSkins = Array.isArray(profile.ownedSkins)
+      ? profile.ownedSkins.filter((skin) => knownSkins.includes(skin))
+      : window.APP_STATE.ownedSkins;
+    const ownedSkins = [...new Set([DEFAULT_CARD_SKIN, ...savedSkins])];
+    const activeSkin = ownedSkins.includes(profile.activeSkin)
+      ? profile.activeSkin
+      : DEFAULT_CARD_SKIN;
+    const parsedVipUntil = Number(profile.vipUntil);
+    const vipUntil = Number.isSafeInteger(parsedVipUntil) && parsedVipUntil > 0
+      ? parsedVipUntil
+      : 0;
+    window.APP_STATE.ownedSkins = ownedSkins;
+    window.APP_STATE.activeSkin = activeSkin;
+    window.APP_STATE.vipUntil = vipUntil;
+    window.dispatchEvent(new CustomEvent('usershopprofilechange', {
+      detail: { ownedSkins, activeSkin, vipUntil },
+    }));
+    renderTelegramProfile();
+  }
+
+  window.applyRemoteUserStoreState = function applyRemoteUserStoreState(profile, source = 'firestore') {
+    if (isValidCurrencyBalance(profile.balance)) applyRemoteBalance(profile.balance, source);
+    if (isValidCurrencyBalance(profile.diamonds)) applyRemoteDiamonds(profile.diamonds);
+    applyRemoteShopProfile(profile);
+  };
+
+  window.getCurrentUserDocumentRef = async function getCurrentUserDocumentRef() {
+    if (!playerDocumentRef && playerDocumentReadyPromise) await playerDocumentReadyPromise;
+    if (!playerDocumentRef) {
+      throw new Error('Профіль Firestore ще не готовий. Переконайтеся, що гра відкрита через Telegram.');
+    }
+    return playerDocumentRef;
+  };
 
   function bindDiamondsShop() {
     const modal = document.getElementById('diamonds-shop-modal');
@@ -729,7 +796,7 @@
     renderBalance();
     renderTelegramProfile();
     bindDiamondsShop();
-    initializeLeaderboard().catch((error) => {
+    playerDocumentReadyPromise = initializeLeaderboard().catch((error) => {
       console.error('Unable to initialize the Firestore leaderboard.', error);
       setLeaderboardMessage('Не вдалося підключити рейтинг.');
     });

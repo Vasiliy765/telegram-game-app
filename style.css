@@ -1582,6 +1582,188 @@ body.tictactoe-active #view-tictactoe.active {
   text-align: center;
 }
 
+.store {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 20px;
+}
+
+.store-section {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, #202125, #191a1d);
+}
+
+.store-section .section-title {
+  margin: 0;
+}
+
+.store-exchange-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.store-item-card,
+.store-item-button {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 74px;
+  align-content: center;
+  justify-items: center;
+  gap: 6px;
+  padding: 12px 8px;
+  border: 1px solid rgba(245, 212, 119, 0.28);
+  border-radius: 12px;
+  background: #141419;
+  color: #f3f3f5;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+
+.store-item-card strong {
+  font-size: clamp(11px, 3.2vw, 14px);
+}
+
+.store-item-card > span:last-child {
+  color: #a4a4ae;
+  font-size: 10px;
+}
+
+.store-item-badge {
+  color: #f5d477;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.store-item-card:disabled,
+.store-item-button:disabled,
+.skin-btn:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.store-action-status {
+  min-height: 18px;
+  margin: 0;
+  color: #c6c6d0;
+  font-size: 12px;
+  text-align: center;
+}
+
+.skins {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 9px;
+}
+
+.skin-card {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #363640;
+  border-radius: 12px;
+  background: #141419;
+}
+
+.skin-card.active {
+  border-color: #f5d477;
+  box-shadow: 0 0 0 1px rgba(245, 212, 119, 0.16);
+}
+
+.skin-preview {
+  width: 42px;
+  height: 60px;
+  border-radius: 6px;
+  background-color: #0f172a;
+  background-position: center;
+  background-size: cover;
+}
+
+.skin-info {
+  min-width: 0;
+}
+
+.skin-info h4,
+.store-vip-card h4 {
+  margin: 0;
+  color: #f3f3f5;
+  font-size: 12px;
+}
+
+.skin-info p,
+.store-vip-card p {
+  margin: 4px 0 0;
+  color: #a4a4ae;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.skin-btn {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: #3a2f1e;
+  color: #f5d477;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.store-note {
+  margin: 0;
+  color: #a4a4ae;
+  font-size: 11px;
+}
+
+.store-vip-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(245, 212, 119, 0.35);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(120, 83, 25, 0.24), #141419 72%);
+}
+
+.store-vip-status,
+.profile-vip-status {
+  color: #f5d477 !important;
+  font-weight: 800;
+}
+
+.store-item-button {
+  min-width: 72px;
+  min-height: 42px;
+  padding: 8px;
+  background: #493919;
+  color: #ffe599;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.profile-vip-status {
+  margin: 0;
+  font-size: 12px;
+}
+
+.card-back {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  background-position: center;
+  background-size: cover;
+}
+
 @media (max-width: 380px) {
   .header-actions {
     gap: 4px;
@@ -1621,5 +1803,13 @@ body.tictactoe-active #view-tictactoe.active {
 
   .diamonds-shop-dialog {
     padding: 18px;
+  }
+
+  .store-exchange-grid {
+    gap: 5px;
+  }
+
+  .store-section {
+    padding: 11px;
   }
 }

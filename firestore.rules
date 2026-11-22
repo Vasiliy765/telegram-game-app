@@ -37,11 +37,27 @@ service cloud.firestore {
         newSeats.keys().size() <= newMeta.get('settings', {}).get('players', 2);
     }
 
+    function validShopProfile(profile) {
+      let ownedSkins = profile.get('ownedSkins', ['classic-red']);
+      let activeSkin = profile.get('activeSkin', 'classic-red');
+      return ownedSkins is list &&
+        ownedSkins.size() > 0 &&
+        ownedSkins.size() <= 5 &&
+        ownedSkins.toSet().hasOnly([
+          'classic-red', 'neon', 'gold', 'spy', 'emerald'
+        ]) &&
+        ownedSkins.toSet().hasAll(['classic-red']) &&
+        activeSkin is string &&
+        ownedSkins.toSet().hasAny([activeSkin]) &&
+        profile.get('vipUntil', 0) is int &&
+        profile.get('vipUntil', 0) >= 0;
+    }
+
     function validUserProfile() {
       let profile = request.resource.data;
       return profile.keys().hasOnly([
           'id', 'name', 'username', 'balance', 'telegramId', 'photoUrl', 'updatedAt',
-          'diamonds', 'lastSalaryAt'
+          'diamonds', 'lastSalaryAt', 'ownedSkins', 'activeSkin', 'vipUntil'
         ]) &&
         (profile.get('id', 0) is int || profile.get('id', '') is string) &&
         profile.get('name', '') is string &&
@@ -54,7 +70,8 @@ service cloud.firestore {
         profile.get('diamonds', 0) is int &&
         profile.get('diamonds', 0) >= 0 &&
         profile.get('lastSalaryAt', 0) is int &&
-        profile.get('lastSalaryAt', 0) >= 0;
+        profile.get('lastSalaryAt', 0) >= 0 &&
+        validShopProfile(profile);
     }
 
     function validPlayerRoomJoin() {

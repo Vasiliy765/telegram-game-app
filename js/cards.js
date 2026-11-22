@@ -10,6 +10,7 @@ window.CARDS = (() => {
     clubs:    { sym: '♣', color: '#18181b', order: 3 },
   };
   const RANK_LABELS = { J: 'В', Q: 'Д', K: 'К', A: 'Т' };
+  const CARD_SKIN_KEYS = ['classic-red', 'neon', 'gold', 'spy', 'emerald'];
 
   function rankLabel(rank) {
     return RANK_LABELS[rank] || rank;
@@ -71,28 +72,24 @@ window.CARDS = (() => {
     </svg>`;
   }
 
-  // SVG for card back (pattern)
   function cardBackSvg({ skin = 'default', size = 34 } = {}) {
     const w = size, h = size * (48 / 34);
     const rx = 7 * (size / 34);
-    let grad, fg, border, shadow;
-    if (skin === 'wood') {
-      grad = 'linear-gradient(135deg, #8b5a2b 0%, #a67c52 100%)';
-      fg = '#fdf0d1'; border = '#5d3a1a';
-    } else if (skin === 'neon') {
-      grad = 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)';
-      fg = '#22d3ee'; border = '#22d3ee';
-    } else if (skin === 'gold') {
-      grad = 'linear-gradient(135deg, #b45309 0%, #d97706 100%)';
-      fg = '#fef3c7'; border = '#fbbf24';
-    } else {
-      grad = 'linear-gradient(135deg, #475569 0%, #334155 100%)';
-      fg = '#cbd5e1'; border = 'rgba(255,255,255,0.2)';
-    }
+    const palettes = {
+      'classic-red': { start: '#991b1b', end: '#dc2626', foreground: '#fee2e2', border: '#fecaca', symbol: '✦' },
+      neon: { start: '#111827', end: '#312e81', foreground: '#67e8f9', border: '#22d3ee', symbol: '⚡' },
+      gold: { start: '#78350f', end: '#d97706', foreground: '#fef3c7', border: '#fbbf24', symbol: '◆' },
+      spy: { start: '#111827', end: '#312e3d', foreground: '#ddd6fe', border: '#a78bfa', symbol: '◈' },
+      emerald: { start: '#064e3b', end: '#047857', foreground: '#d1fae5', border: '#6ee7b7', symbol: '♛' },
+    };
+    const palette = Object.hasOwn(palettes, skin) ? palettes[skin] : palettes['classic-red'];
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-      <rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="${rx}" fill="${grad}" stroke="${border}" stroke-width="1.5"/>
-      <text x="${w/2}" y="${h/2 + 6}" font-family="Arial, sans-serif" font-size="${10 * (size/34)}" font-weight="bold" fill="${fg}" text-anchor="middle" opacity="0.35">★</text>
-      <path d="M ${w*0.22} ${h*0.28} L ${w*0.78} ${h*0.28} L ${w/2} ${h*0.72} Z" fill="none" stroke="${fg}" stroke-width="1.4" opacity="0.5"/>
+      <defs><linearGradient id="back" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="${palette.start}"/><stop offset="100%" stop-color="${palette.end}"/>
+      </linearGradient></defs>
+      <rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="${rx}" fill="url(#back)" stroke="${palette.border}" stroke-width="1.5"/>
+      <text x="${w / 2}" y="${h / 2 + 6}" font-family="Arial, sans-serif" font-size="${10 * (size / 34)}" font-weight="bold" fill="${palette.foreground}" text-anchor="middle" opacity="0.78">${palette.symbol}</text>
+      <path d="M ${w * 0.22} ${h * 0.28} L ${w * 0.78} ${h * 0.28} L ${w / 2} ${h * 0.72} Z" fill="none" stroke="${palette.foreground}" stroke-width="1.4" opacity="0.72"/>
     </svg>`;
   }
 
@@ -136,5 +133,5 @@ window.CARDS = (() => {
     return best;
   }
 
-  return { RANKS, RANK_VAL, RANK_LABELS, rankLabel, SUITS, newDeck, shuffle, cardSvg, cardBackSvg, cardFaceImg, cardBackImg, beat, canBeat, cheapestBeater };
+  return { RANKS, RANK_VAL, RANK_LABELS, CARD_SKIN_KEYS, rankLabel, SUITS, newDeck, shuffle, cardSvg, cardBackSvg, cardFaceImg, cardBackImg, beat, canBeat, cheapestBeater };
 })();

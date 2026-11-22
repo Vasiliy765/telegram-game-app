@@ -316,7 +316,7 @@ async function sendAdminReply(message, userId) {
 }
 
 async function sendSalary(chatId, user) {
-  const reward = Math.random() < 0.9
+  const baseReward = Math.random() < 0.9
     ? Math.floor(Math.random() * 9) + 1
     : Math.floor(Math.random() * 6) + 10;
   const now = Date.now();
@@ -329,6 +329,7 @@ async function sendSalary(chatId, user) {
         return { kind: 'cooldown', remainingMs: SALARY_COOLDOWN_MS - (now - lastSalaryAt) };
       }
 
+      const reward = Number(snapshot.get('vipUntil')) > now ? baseReward * 2 : baseReward;
       const balance = snapshot.get('balance');
       transaction.update(userRef, {
         balance: admin.firestore.FieldValue.increment(reward),
@@ -339,6 +340,7 @@ async function sendSalary(chatId, user) {
       });
       return {
         kind: 'paid',
+        reward,
         balance: (typeof balance === 'number' && Number.isFinite(balance) ? balance : 0) + reward,
       };
     }
@@ -347,11 +349,11 @@ async function sendSalary(chatId, user) {
       id: user.id,
       name: displayName(user),
       username: user.username || '',
-      balance: 100 + reward,
+      balance: 100 + baseReward,
       diamonds: 0,
       lastSalaryAt: now,
     });
-    return { kind: 'paid', balance: 100 + reward };
+    return { kind: 'paid', reward: baseReward, balance: 100 + baseReward };
   });
 
   if (result.kind === 'cooldown') {
@@ -366,6 +368,7 @@ async function sendSalary(chatId, user) {
     return;
   }
 
+  const reward = result.reward;
   const rewardText = `<b>${reward} 🪙</b>`;
   const bonusText = reward >= 10 ? '✨ <b>Рідкісний бонус!</b>\n' : '';
   await sendMessage(
@@ -667,7 +670,9 @@ async function sendTop(chatId) {
 
   const rows = snapshot.docs.map((doc, index) => {
     const player = doc.data();
-    return `${index + 1}. ${escapeHtml(player.name || `Гравець ${player.id}`)} — `
+    const playerName = player.name || `Гравець ${player.id}`;
+    const vipCrown = Number(player.vipUntil) > Date.now() ? '👑 ' : '';
+    return `${index + 1}. ${escapeHtml(`${vipCrown}${playerName}`)} — `
       + `<b>${formatCoins(player.balance || 0)} 🪙</b>`;
   });
   await sendMessage(chatId, `<b>🏆 Топ-10 гравців</b>\n${rows.join('\n')}`, {

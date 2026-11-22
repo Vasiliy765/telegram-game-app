@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#0f172a">
   <title>Ігровий центр · Telegram Mini App</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=15">
+  <link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
   <div id="app">
@@ -118,7 +118,44 @@
               <p class="diamonds-shop-status" data-diamonds-shop-status role="status" aria-live="polite"></p>
             </div>
           </div>
-          <div class="store-section"><h3 class="section-title">Скіни для карт (Дурак)</h3><div class="skins" id="store-skins"></div><div class="store-note">Обраний скін застосовується до рубашки карт у грі Дурак.</div></div>
+          <section class="store-section" aria-labelledby="diamond-exchange-title">
+            <h3 class="section-title" id="diamond-exchange-title">Обмін діамантів на монети</h3>
+            <div class="store-exchange-grid" id="store-exchanges">
+              <button class="store-item-card" type="button" data-diamond-exchange="10">
+                <strong>10 💎 → 150 🪙</strong>
+                <span>Базовий обмін</span>
+              </button>
+              <button class="store-item-card" type="button" data-diamond-exchange="50">
+                <span class="store-item-badge">Вигода +13%</span>
+                <strong>50 💎 → 850 🪙</strong>
+                <span>Більше монет за діаманти</span>
+              </button>
+              <button class="store-item-card" type="button" data-diamond-exchange="100">
+                <span class="store-item-badge">Вигода +33%</span>
+                <strong>100 💎 → 2 000 🪙</strong>
+                <span>Найкращий курс обміну</span>
+              </button>
+            </div>
+            <p class="store-action-status" id="store-exchange-status" role="status" aria-live="polite"></p>
+          </section>
+          <section class="store-section" aria-labelledby="card-skins-title">
+            <h3 class="section-title" id="card-skins-title">Скіни рубашок карт «Дурака»</h3>
+            <div class="skins" id="store-skins"></div>
+            <p class="store-note">Обраний скін видно суперникам під час партії.</p>
+            <p class="store-action-status" id="store-skins-status" role="status" aria-live="polite"></p>
+          </section>
+          <section class="store-section" aria-labelledby="vip-shop-title">
+            <h3 class="section-title" id="vip-shop-title">VIP-статус Агента</h3>
+            <article class="store-vip-card">
+              <div>
+                <h4>👑 VIP-статус Агента · 30 днів</h4>
+                <p>Корона біля імені в Топі та за ігровим столом. Подвійна нагорода за «Зп».</p>
+                <p class="store-vip-status" id="store-vip-status" role="status" aria-live="polite"></p>
+                <p class="store-action-status" id="store-vip-action-status" role="status" aria-live="polite"></p>
+              </div>
+              <button class="store-item-button" id="store-vip-buy" type="button">40 💎</button>
+            </article>
+          </section>
         </div>
       </section>
 
@@ -373,6 +410,7 @@
             <h3 id="profile-name">Гравець</h3>
             <p id="profile-username"></p>
             <p>ID: <span id="profile-user-id">—</span></p>
+            <p class="profile-vip-status" id="profile-vip-status" hidden></p>
           </div>
         </section>
         <button id="sa-profile-adm-btn" type="button" hidden style="width:100%;margin:16px 0;padding:16px;border:0;border-radius:14px;background:#dc2626;color:#fff;font-size:18px;font-weight:800;box-shadow:0 6px 20px rgba(220,38,38,.35);cursor:pointer">🛡️ Адмін-панель</button>
@@ -437,19 +475,19 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=22"></script>
-    <script src="js/firestore-room-store.js?v=22"></script>
-    <script src="js/twa.js?v=22"></script>
-    <script src="js/game.js?v=22"></script>
-    <script src="js/router.js?v=22"></script>
-    <script src="js/cards.js?v=22"></script>
-    <script src="js/durak.js?v=22"></script>
-    <script src="js/battleship.js?v=22"></script>
-    <script src="js/tictactoe.js?v=22"></script>
-    <script src="js/store.js?v=22"></script>
-    <script src="js/durak-room.js?v=22"></script>
-    <script src="js/durak-multiplayer.js?v=22"></script>
-    <script src="js/main.js?v=22"></script>
+    <script src="js/firebase-config.js?v=23"></script>
+    <script src="js/firestore-room-store.js?v=23"></script>
+    <script src="js/twa.js?v=23"></script>
+    <script src="js/game.js?v=23"></script>
+    <script src="js/router.js?v=23"></script>
+    <script src="js/cards.js?v=23"></script>
+    <script src="js/durak.js?v=23"></script>
+    <script src="js/battleship.js?v=23"></script>
+    <script src="js/tictactoe.js?v=23"></script>
+    <script src="js/store.js?v=23"></script>
+    <script src="js/durak-room.js?v=23"></script>
+    <script src="js/durak-multiplayer.js?v=23"></script>
+    <script src="js/main.js?v=23"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (window.hasIncomingRoomInvite?.('battleship')) {
@@ -458,7 +496,7 @@
     });
   </script>
   </div>
-<script src="js/reactions-sync.js?v=22"></script>
-<script src="js/admin-panel.js?v=22"></script>
+<script src="js/reactions-sync.js?v=23"></script>
+<script src="js/admin-panel.js?v=23"></script>
 </body>
 </html>

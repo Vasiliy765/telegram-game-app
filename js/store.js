@@ -1,112 +1,362 @@
-/* ==== МАГАЗИН / ДОНАТ (Stars + скіни карт) ==== */
+/* ==== Магазин: Telegram Stars, обмін валют, скіни й VIP ==== */
 window.Store = (() => {
   const $ = (id) => document.getElementById(id);
-  let balance = Number(window.APP_STATE?.balance) || 0;
-
-  const SKINS = [
-    { key: 'default', name: 'Класична', cost: 0, desc: 'Стандартна рубашка' },
-    { key: 'wood', name: 'Дерев’яна', cost: 25, desc: 'Тепла текстура' },
-    { key: 'neon', name: 'Неон', cost: 50, desc: 'Світлий кіберстиль' },
-    { key: 'gold', name: 'Золота', cost: 100, desc: 'Преміум вигляд' },
+  const DEFAULT_SKIN = 'classic-red';
+  const EXCHANGES = [
+    { diamonds: 10, coins: 150 },
+    { diamonds: 50, coins: 850, bonus: '+13%' },
+    { diamonds: 100, coins: 2000, bonus: '+33%' },
   ];
+  const SKINS = [
+    { key: DEFAULT_SKIN, name: 'Класичний червоний', desc: 'Безкоштовна класика', cost: 0 },
+    { key: 'neon', name: 'Кіберпанк Неон', desc: 'Енергія нічного міста', cost: 200, currency: 'balance' },
+    { key: 'gold', name: 'Золотий Злиток', desc: 'Золото завжди перемагає', cost: 15, currency: 'diamonds' },
+    { key: 'spy', name: 'Тінь Шпигуна', desc: 'Загадковий агентський стиль', cost: 35, currency: 'diamonds' },
+    { key: 'emerald', name: 'Королівський Смарагд', desc: 'Смарагдова колода королів', cost: 50, currency: 'diamonds' },
+  ];
+  const VIP_COST = 40;
+  const VIP_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+  let state = {
+    balance: 0,
+    diamonds: 0,
+    ownedSkins: [DEFAULT_SKIN],
+    activeSkin: DEFAULT_SKIN,
+    vipUntil: 0,
+  };
+  let busy = false;
+  let actionStatus = '';
 
-  let owned = JSON.parse(localStorage.getItem('tga_owned') || '["default"]');
-  let selected = localStorage.getItem('tga_skin') || 'default';
-
-  function save() {
-    localStorage.setItem('tga_owned', JSON.stringify(owned));
-    localStorage.setItem('tga_skin', selected);
+  function syncFromAppState() {
+    const appState = window.APP_STATE || {};
+    state = {
+      balance: Number(appState.balance) || 0,
+      diamonds: Number(appState.diamonds) || 0,
+      ownedSkins: Array.isArray(appState.ownedSkins) ? appState.ownedSkins : [DEFAULT_SKIN],
+      activeSkin: appState.activeSkin || DEFAULT_SKIN,
+      vipUntil: Number(appState.vipUntil) || 0,
+    };
   }
-  function setBalance(v) {
-    const next = Number(v);
-    if (!Number.isSafeInteger(next) || next < 0) {
-      throw new TypeError('Balance must be a non-negative safe integer.');
+
+  function toast(message) {
+    window.TWA?.toast?.(message);
+  }
+
+  function setActionStatus(message, target = 'store-exchange-status') {
+    if (target === 'store-exchange-status') actionStatus = message;
+    const status = $(target);
+    if (status) status.textContent = message;
+  }
+
+  async function runUserTransaction(callback) {
+    if (typeof window.getCurrentUserDocumentRef !== 'function' || !window.firebase?.firestore) {
+      throw new Error('Профіль Firestore ще не готовий. Спробуйте ще раз.');
     }
-    const current = Number(window.APP_STATE?.balance) || 0;
-    if (!window.updateUserBalance(next - current)) {
-      window.TWA.toast('Недостатньо 🪙');
-      return false;
+    const userRef = await window.getCurrentUserDocumentRef();
+    const firestore = window.firebase.firestore();
+    return firestore.runTransaction((transaction) => callback(transaction, userRef, firestore));
+  }
+
+  function readBalance(snapshot, field) {
+    const value = snapshot.get(field) ?? 0;
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error(`Некоректний баланс ${field} у Firestore.`);
     }
-    balance = next;
-    save();
-    return true;
-  }
-  function addStars(n) { setBalance(balance + n); window.TWA.toast('Нараховано ' + n + ' 🪙'); }
-
-  function renderStars() {
-    const el = $('#store-stars');
-    el.innerHTML = '';
-    const packs = [
-      { n: 50, label: '50 ⭐' },
-      { n: 200, label: '200 ⭐', primary: true },
-      { n: 500, label: '500 ⭐' },
-      { n: 1000, label: '1000 ⭐' },
-    ];
-    packs.forEach((p) => {
-      const div = document.createElement('div');
-      div.className = 'star-pack' + (p.primary ? ' primary' : '');
-      div.innerHTML = `<span class="pack-amount">${p.label}</span><span class="pack-label"> Stars</span>`;
-      div.addEventListener('click', () => { window.TWA.haptic(); buyStars(p.n); });
-      el.appendChild(div);
-    });
+    return value;
   }
 
-  async function buyStars(n) {
+  function applyPurchaseResult(result) {
+    Object.assign(state, result);
+    if (typeof window.applyRemoteUserStoreState === 'function') {
+      window.applyRemoteUserStoreState(result, 'store-purchase');
+    } else {
+      Object.assign(window.APP_STATE, result);
+      window.dispatchEvent(new CustomEvent('usershopprofilechange', { detail: result }));
+    }
+    renderSkins();
+    renderVip();
+    window.Durak?.render?.();
+    window.DurakMultiplayer?.render?.();
+  }
+
+  async function exchangeDiamonds(diamondAmount) {
+    if (busy) return;
+    const offer = EXCHANGES.find((item) => item.diamonds === diamondAmount);
+    if (!offer) return;
+    busy = true;
+    setActionStatus('Перевіряємо баланс у Firestore…');
+    renderExchangeButtons();
     try {
-      const res = await window.TWA.sendStarsInvoice(n, 'Поповнення ігрового балансу');
-      if (res.status === 'paid') addStars(n);
-    } catch (e) {
-      window.TWA.toast(e.message || 'Оплата скасована або не підтримується');
+      const result = await runUserTransaction(async (transaction, userRef, firestore) => {
+        const snapshot = await transaction.get(userRef);
+        if (!snapshot.exists) throw new Error('Профіль Firestore не знайдено.');
+        const diamonds = readBalance(snapshot, 'diamonds');
+        const balance = readBalance(snapshot, 'balance');
+        if (diamonds < offer.diamonds) throw new Error('Недостатньо діамантів для обміну.');
+        if (balance + offer.coins > Number.MAX_SAFE_INTEGER) {
+          throw new Error('Баланс монет перевищить допустиме значення.');
+        }
+        transaction.update(userRef, {
+          diamonds: firestore.FieldValue.increment(-offer.diamonds),
+          balance: firestore.FieldValue.increment(offer.coins),
+        });
+        return {
+          diamonds: diamonds - offer.diamonds,
+          balance: balance + offer.coins,
+          ownedSkins: Array.isArray(snapshot.get('ownedSkins'))
+            ? snapshot.get('ownedSkins')
+            : [DEFAULT_SKIN],
+          activeSkin: snapshot.get('activeSkin') || DEFAULT_SKIN,
+          vipUntil: Number(snapshot.get('vipUntil')) || 0,
+        };
+      });
+      applyPurchaseResult(result);
+      setActionStatus(`Успішно обміняно ${offer.diamonds} 💎 на ${offer.coins} 🪙.`);
+      toast(`Обмін успішний: +${offer.coins} 🪙`);
+    } catch (error) {
+      console.error('Unable to exchange diamonds for coins.', error);
+      setActionStatus(error.message || 'Не вдалося виконати обмін.');
+      toast(error.message || 'Не вдалося виконати обмін.');
+    } finally {
+      busy = false;
+      renderExchangeButtons();
+      renderSkins();
+      renderVip();
     }
+  }
+
+  async function buyOrSelectSkin(key) {
+    if (busy) return;
+    const skin = SKINS.find((item) => item.key === key);
+    if (!skin || !window.CARDS?.CARD_SKIN_KEYS.includes(key)) return;
+    busy = true;
+    setActionStatus(`Оновлюємо скін «${skin.name}»…`, 'store-skins-status');
+    renderSkins();
+    try {
+      const result = await runUserTransaction(async (transaction, userRef, firestore) => {
+        const snapshot = await transaction.get(userRef);
+        if (!snapshot.exists) throw new Error('Профіль Firestore не знайдено.');
+        const ownedSkins = Array.isArray(snapshot.get('ownedSkins'))
+          ? snapshot.get('ownedSkins')
+          : [DEFAULT_SKIN];
+        const alreadyOwned = ownedSkins.includes(key);
+        if (!alreadyOwned && skin.cost > 0) {
+          const currentBalance = readBalance(snapshot, skin.currency);
+          if (currentBalance < skin.cost) {
+            throw new Error(`Недостатньо ${skin.currency === 'diamonds' ? '💎' : '🪙'} для покупки.`);
+          }
+          transaction.update(userRef, {
+            [skin.currency]: firestore.FieldValue.increment(-skin.cost),
+            ownedSkins: firestore.FieldValue.arrayUnion(key),
+            activeSkin: key,
+          });
+          return {
+            balance: skin.currency === 'balance' ? currentBalance - skin.cost : readBalance(snapshot, 'balance'),
+            diamonds: skin.currency === 'diamonds'
+              ? currentBalance - skin.cost
+              : readBalance(snapshot, 'diamonds'),
+            ownedSkins: [...new Set([...ownedSkins, key])],
+            activeSkin: key,
+            vipUntil: Number(snapshot.get('vipUntil')) || 0,
+            newlyPurchased: true,
+          };
+        }
+        if (!alreadyOwned) {
+          transaction.update(userRef, {
+            ownedSkins: firestore.FieldValue.arrayUnion(key),
+            activeSkin: key,
+          });
+        } else {
+          transaction.update(userRef, { activeSkin: key });
+        }
+        return {
+          balance: readBalance(snapshot, 'balance'),
+          diamonds: readBalance(snapshot, 'diamonds'),
+          ownedSkins: alreadyOwned ? ownedSkins : [...new Set([...ownedSkins, key])],
+          activeSkin: key,
+          vipUntil: Number(snapshot.get('vipUntil')) || 0,
+          newlyPurchased: false,
+        };
+      });
+      const newlyPurchased = result.newlyPurchased;
+      delete result.newlyPurchased;
+      applyPurchaseResult(result);
+      setActionStatus(`Скін «${skin.name}» активовано.`, 'store-skins-status');
+      toast(newlyPurchased ? `Скін «${skin.name}» куплено!` : 'Скін застосовано!');
+    } catch (error) {
+      console.error('Unable to purchase or select a card skin.', error);
+      setActionStatus(error.message || 'Не вдалося оновити скін.', 'store-skins-status');
+      toast(error.message || 'Не вдалося оновити скін.');
+    } finally {
+      busy = false;
+      renderSkins();
+      renderVip();
+    }
+  }
+
+  async function buyVip() {
+    if (busy) return;
+    busy = true;
+    setActionStatus('Перевіряємо баланс діамантів…', 'store-vip-action-status');
+    renderVip();
+    try {
+      const result = await runUserTransaction(async (transaction, userRef, firestore) => {
+        const snapshot = await transaction.get(userRef);
+        if (!snapshot.exists) throw new Error('Профіль Firestore не знайдено.');
+        const diamonds = readBalance(snapshot, 'diamonds');
+        const balance = readBalance(snapshot, 'balance');
+        if (diamonds < VIP_COST) throw new Error('Для VIP потрібно 40 💎.');
+        const vipUntil = Date.now() + VIP_DURATION_MS;
+        transaction.update(userRef, {
+          diamonds: firestore.FieldValue.increment(-VIP_COST),
+          vipUntil,
+        });
+        return {
+          balance,
+          diamonds: diamonds - VIP_COST,
+          ownedSkins: Array.isArray(snapshot.get('ownedSkins'))
+            ? snapshot.get('ownedSkins')
+            : [DEFAULT_SKIN],
+          activeSkin: snapshot.get('activeSkin') || DEFAULT_SKIN,
+          vipUntil,
+        };
+      });
+      applyPurchaseResult(result);
+      setActionStatus('VIP-статус Агента активовано на 30 днів.', 'store-vip-action-status');
+      toast('👑 VIP активовано на 30 днів!');
+    } catch (error) {
+      console.error('Unable to purchase VIP status.', error);
+      setActionStatus(error.message || 'Не вдалося активувати VIP.', 'store-vip-action-status');
+      toast(error.message || 'Не вдалося активувати VIP.');
+    } finally {
+      busy = false;
+      renderExchangeButtons();
+      renderSkins();
+      renderVip();
+    }
+  }
+
+  function renderExchangeButtons() {
+    document.querySelectorAll('[data-diamond-exchange]').forEach((button) => {
+      button.disabled = busy;
+    });
+    const status = $('store-exchange-status');
+    if (status) status.textContent = actionStatus;
   }
 
   function renderSkins() {
-    const el = $('#store-skins');
-    el.innerHTML = '';
-    SKINS.forEach((s) => {
-      const isOwned = owned.includes(s.key);
-      const isSel = selected === s.key;
-      const div = document.createElement('div');
-      div.className = 'skin-card' + (isSel ? ' active' : '');
-      div.innerHTML = `
-        <div class="skin-preview" style="background:url('${CARDS.cardBackImg(s.key, 44)}') center/cover no-repeat, #0f172a;"></div>
-        <div class="skin-info">
-          <h4>${s.name}</h4>
-          <p>${s.desc}${isOwned ? ' · куплено' : ''}${isSel ? ' · активне' : ''}</p>
-        </div>
-        <button class="skin-btn" ${isSel ? 'disabled' : ''} ${!isOwned ? `onclick="Store.buySkin('${s.key}',${s.cost})"` : ''}>
-          ${isSel ? 'Активне' : (isOwned ? 'Обрати' : s.cost + ' 🪙')}
-        </button>
-      `;
-      el.appendChild(div);
+    const element = $('store-skins');
+    if (!element || !window.CARDS) return;
+    element.replaceChildren();
+    SKINS.forEach((skin) => {
+      const owned = state.ownedSkins.includes(skin.key);
+      const active = state.activeSkin === skin.key;
+      const card = document.createElement('article');
+      card.className = `skin-card${active ? ' active' : ''}`;
+      const preview = document.createElement('div');
+      preview.className = 'skin-preview';
+      preview.style.backgroundImage = `url("${window.CARDS.cardBackImg(skin.key, 44)}")`;
+      const info = document.createElement('div');
+      info.className = 'skin-info';
+      const name = document.createElement('h4');
+      name.textContent = skin.name;
+      const description = document.createElement('p');
+      description.textContent = active
+        ? `${skin.desc} · активне`
+        : owned ? `${skin.desc} · куплено` : skin.desc;
+      info.append(name, description);
+      const button = document.createElement('button');
+      button.className = 'skin-btn';
+      button.type = 'button';
+      button.disabled = busy || active;
+      button.textContent = active
+        ? 'Активне'
+        : owned
+          ? 'Обрати'
+          : skin.cost === 0
+            ? 'Отримати'
+            : `${skin.cost} ${skin.currency === 'diamonds' ? '💎' : '🪙'}`;
+      button.addEventListener('click', () => { void buyOrSelectSkin(skin.key); });
+      card.append(preview, info, button);
+      element.appendChild(card);
     });
   }
 
-  async function buySkin(key, cost) {
-    if (owned.includes(key)) {
-      selected = key; save(); renderSkins(); applySkin(); return;
+  function renderVip() {
+    const status = $('store-vip-status');
+    const button = $('store-vip-buy');
+    if (!button) return;
+    const isVip = state.vipUntil > Date.now();
+    button.disabled = busy;
+    button.textContent = isVip ? 'Продовжити · 40 💎' : '40 💎';
+    if (status) {
+      status.textContent = isVip
+        ? `VIP активний до ${new Date(state.vipUntil).toLocaleDateString('uk-UA')}.`
+        : 'Статус не активний.';
     }
-    if (balance < cost) { window.TWA.toast('Недостатньо 🪙'); return; }
-    if (!setBalance(balance - cost)) return;
-    owned.push(key);
-    selected = key;
-    save();
+  }
+
+  function renderStars() {
+    const element = $('store-stars');
+    if (!element) return;
+    element.replaceChildren();
+    [
+      { amount: 50, label: '50 ⭐' },
+      { amount: 200, label: '200 ⭐', primary: true },
+      { amount: 500, label: '500 ⭐' },
+      { amount: 1000, label: '1000 ⭐' },
+    ].forEach((pack) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = `star-pack${pack.primary ? ' primary' : ''}`;
+      item.innerHTML = `<span class="pack-amount">${pack.label}</span><span class="pack-label"> Stars</span>`;
+      item.addEventListener('click', () => {
+        window.TWA?.haptic?.();
+        void buyStars(pack.amount);
+      });
+      element.appendChild(item);
+    });
+  }
+
+  async function buyStars(amount) {
+    try {
+      const result = await window.TWA.sendStarsInvoice(amount, 'Поповнення ігрового балансу');
+      if (result.status === 'paid') {
+        if (window.updateUserBalance(amount)) toast(`Нараховано ${amount} 🪙`);
+      }
+    } catch (error) {
+      toast(error.message || 'Оплата скасована або не підтримується');
+    }
+  }
+
+  function init() {
+    syncFromAppState();
+    renderStars();
+    renderExchangeButtons();
     renderSkins();
-    applySkin();
-    window.TWA.toast('Скін куплено!');
+    renderVip();
   }
 
-  function applySkin() {
-    localStorage.setItem('tga_skin', selected);
-    if (window.Durak && typeof window.Durak.render === 'function') window.Durak.render();
-  }
-
+  document.querySelectorAll('[data-diamond-exchange]').forEach((button) => {
+    button.addEventListener('click', () => {
+      void exchangeDiamonds(Number(button.dataset.diamondExchange));
+    });
+  });
+  $('store-vip-buy')?.addEventListener('click', () => { void buyVip(); });
   window.addEventListener('userbalancechange', (event) => {
-    balance = event.detail.balance;
+    state.balance = event.detail.balance;
+    renderSkins();
+  });
+  window.addEventListener('userdiamondschange', (event) => {
+    state.diamonds = event.detail.diamonds;
+    renderSkins();
+  });
+  window.addEventListener('usershopprofilechange', (event) => {
+    state.ownedSkins = event.detail.ownedSkins;
+    state.activeSkin = event.detail.activeSkin;
+    state.vipUntil = event.detail.vipUntil;
+    renderSkins();
+    renderVip();
   });
 
-  return {
-    init() { balance = Number(window.APP_STATE?.balance) || 0; renderStars(); renderSkins(); setBalance(balance); },
-    buyStars, buySkin, renderSkins, renderStars, setBalance, addStars,
-  };
+  return { init, exchangeDiamonds, buyOrSelectSkin, buyVip };
 })();

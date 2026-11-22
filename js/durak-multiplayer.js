@@ -107,6 +107,11 @@ window.DurakMultiplayer = (() => {
     }, []);
   }
 
+  function displayPlayerName(player) {
+    const name = player.name || 'Гравець';
+    return Number(player.vipUntil) > Date.now() ? `👑 ${name}` : name;
+  }
+
   function nextActiveIndex(index) {
     const active = activeIndexes();
     if (!active.length) return -1;
@@ -208,6 +213,8 @@ window.DurakMultiplayer = (() => {
         telegramId: player.telegramId || '',
         username: player.username || '',
         photoUrl: player.photoUrl || '',
+        activeSkin: player.activeSkin || 'classic-red',
+        vipUntil: Number(player.vipUntil) || 0,
         isBot: player.isBot,
         isOut: player.isOut,
         status: player.status,
@@ -259,6 +266,8 @@ window.DurakMultiplayer = (() => {
       telegramId: player.telegramId || '',
       username: player.username || '',
       photoUrl: player.photoUrl || '',
+      activeSkin: player.activeSkin || 'classic-red',
+      vipUntil: Number(player.vipUntil) || 0,
       isBot: player.isBot,
       isOut: player.isOut,
       status: player.status,
@@ -294,6 +303,8 @@ window.DurakMultiplayer = (() => {
       telegramId: player.telegramId || '',
       username: player.username || '',
       photoUrl: player.photoUrl || '',
+      activeSkin: player.activeSkin || 'classic-red',
+      vipUntil: Number(player.vipUntil) || 0,
       isBot: Boolean(player.isBot),
       isOut: Boolean(player.isOut),
       status: player.status || '',
@@ -489,7 +500,7 @@ window.DurakMultiplayer = (() => {
       details.className = 'durak-result-details';
       const name = document.createElement('span');
       name.className = 'durak-result-name';
-      name.textContent = player.name;
+      name.textContent = displayPlayerName(player);
       const description = document.createElement('span');
       description.className = 'durak-result-description';
       description.textContent = player.id === loser?.id ? 'дурень' : 'переможець';
@@ -860,7 +871,7 @@ window.DurakMultiplayer = (() => {
         back.className = 'durak-mp-player-back';
         back.style.setProperty('--back-index', backIndex);
         back.style.setProperty('--back-offset', Math.abs(backIndex - 2));
-        back.style.backgroundImage = `url("${C.cardBackImg('default', 38)}")`;
+        back.style.backgroundImage = `url("${C.cardBackImg(player.activeSkin, 38)}")`;
         fan.appendChild(back);
       }
 
@@ -876,7 +887,7 @@ window.DurakMultiplayer = (() => {
       const role = document.createElement('span');
       role.className = 'durak-mp-role';
       role.textContent = index === game.attackerIndex ? '⚔' : index === game.defenderIndex ? '🛡' : '';
-      name.append(role, document.createTextNode(player.name));
+      name.append(role, document.createTextNode(displayPlayerName(player)));
 
       const info = document.createElement('div');
       info.className = 'durak-mp-player-info';
@@ -1150,6 +1161,8 @@ window.DurakMultiplayer = (() => {
       telegramId: player.telegramId || '',
       username: player.username || '',
       photoUrl: player.photoUrl || '',
+      activeSkin: player.activeSkin || 'classic-red',
+      vipUntil: Number(player.vipUntil) || 0,
       isBot: Boolean(player.isBot),
       isOut: false,
       status: '',

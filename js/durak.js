@@ -248,11 +248,13 @@ window.Durak = (() => {
     }
   }
   function render() {
-    skin = localStorage.getItem('durak_skin') || 'default';
+    skin = window.APP_STATE?.activeSkin || 'classic-red';
     const t = state.trump;
     $('#durak-trump').innerHTML = `<img src="${C.cardFaceImg(t.rank, t.suit, 54)}">`;
     $('#durak-trump-suit').textContent = t.suit.charAt(0).toUpperCase() + t.suit.slice(1) + ' ' + C.SUITS[t.suit].sym;
-    $('#durak-bot-hand').innerHTML = state.bot.map(() => `<div class="card-back skin-${skin}"></div>`).join('');
+    $('#durak-bot-hand').innerHTML = state.bot
+      .map(() => `<div class="card-back" style="background-image:url('${C.cardBackImg(skin, 38)}')"></div>`)
+      .join('');
     const tableEl = $('#durak-table');
     tableEl.innerHTML = '';
     state.table.forEach((r) => {
