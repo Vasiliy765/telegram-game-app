@@ -125,23 +125,42 @@
   };
 
   const publicRoomMounts = new WeakMap();
+  const PUBLIC_ROOM_MAX_AGE_MS = 30 * 60 * 1000;
 
   window.PublicRooms = {
-    mount(container, onJoin) {
+    mount(container, onJoin, gameFilter) {
       if (!container) return () => {};
+      const collectionsByGame = {
+        durak: 'durakRooms',
+        battleship: 'battleshipRooms',
+        tictactoe: 'tictactoeRooms',
+      };
+      const collection = collectionsByGame[gameFilter];
+      if (!collection) {
+        container.textContent = 'Не вдалося визначити гру для відкритих столів.';
+        return () => {};
+      }
+
       const previousMount = publicRoomMounts.get(container);
       previousMount?.unsubscribers.forEach((unsubscribe) => unsubscribe());
-      const mountState = { unsubscribers: [] };
+      if (previousMount?.refreshInterval) clearInterval(previousMount.refreshInterval);
+      const mountState = { unsubscribers: [], refreshInterval: null };
       publicRoomMounts.set(container, mountState);
-      const roomsByCollection = new Map();
+      let rooms = [];
       container.replaceChildren();
 
       function render() {
         if (publicRoomMounts.get(container) !== mountState) return;
-        const rooms = [...roomsByCollection.values()].flat()
+        const now = Date.now();
+        const visibleRooms = rooms
+          .filter((room) => room.game === gameFilter &&
+            room.status === 'waiting' &&
+            room.playerCount < room.capacity &&
+            room.createdAt > 0 &&
+            now - room.createdAt <= PUBLIC_ROOM_MAX_AGE_MS)
           .sort((left, right) => (Number(right.createdAt) || 0) - (Number(left.createdAt) || 0));
         container.replaceChildren();
-        if (!rooms.length) {
+        if (!visibleRooms.length) {
           const empty = document.createElement('p');
           empty.className = 'public-room-empty';
           empty.textContent = 'Немає відкритих столів';
@@ -149,7 +168,7 @@
           return;
         }
 
-        rooms.forEach((room) => {
+        visibleRooms.forEach((room) => {
           const card = document.createElement('article');
           card.className = 'public-room-card';
           const info = document.createElement('div');
@@ -195,6 +214,7 @@
           playerCount: players.length,
           capacity: Number(isDurak ? settings.players : 2) || 2,
           createdAt: Number(meta.createdAt) || 0,
+          status: meta.status,
         };
       }
 
@@ -207,21 +227,20 @@
           await getFirebaseUser();
           if (publicRoomMounts.get(container) !== mountState) return;
           const firestore = window.firebase.firestore();
-          ['durakRooms', 'battleshipRooms', 'tictactoeRooms'].forEach((collection) => {
-            const unsubscribe = firestore.collection(collection)
-              .where('meta.isPublic', '==', true)
-              .where('meta.status', '==', 'waiting')
-              .onSnapshot((snapshot) => {
-                roomsByCollection.set(collection, snapshot.docs.map((document) => presentRoom(collection, document)));
-                render();
-              }, (error) => {
-                console.error(`Public ${collection} listener failed`, error);
-                if (publicRoomMounts.get(container) === mountState) {
-                  container.textContent = 'Не вдалося завантажити відкриті столи.';
-                }
-              });
-            mountState.unsubscribers.push(unsubscribe);
-          });
+          const unsubscribe = firestore.collection(collection)
+            .where('meta.isPublic', '==', true)
+            .where('meta.status', '==', 'waiting')
+            .onSnapshot((snapshot) => {
+              rooms = snapshot.docs.map((document) => presentRoom(collection, document));
+              render();
+            }, (error) => {
+              console.error(`Public ${collection} listener failed`, error);
+              if (publicRoomMounts.get(container) === mountState) {
+                container.textContent = 'Не вдалося завантажити відкриті столи.';
+              }
+            });
+          mountState.unsubscribers.push(unsubscribe);
+          mountState.refreshInterval = setInterval(render, 15_000);
         } catch (error) {
           console.error('Unable to subscribe to public rooms', error);
           if (publicRoomMounts.get(container) === mountState) {
@@ -234,6 +253,7 @@
       return () => {
         if (publicRoomMounts.get(container) !== mountState) return;
         mountState.unsubscribers.forEach((unsubscribe) => unsubscribe());
+        if (mountState.refreshInterval) clearInterval(mountState.refreshInterval);
         publicRoomMounts.delete(container);
       };
     },

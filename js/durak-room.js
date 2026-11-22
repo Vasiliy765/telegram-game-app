@@ -83,12 +83,17 @@ window.DurakRoom = (() => {
 
   function setActiveRoomId(roomId) {
     const id = roomId == null ? '' : String(roomId);
+    const changed = String(window.activeRoomId || '') !== id;
     window.currentRoomId = id;
     window.activeRoomId = id;
     const gameContainer = $('durak-game');
-    if (!gameContainer) return;
-    if (id) gameContainer.dataset.roomId = id;
-    else delete gameContainer.dataset.roomId;
+    if (gameContainer) {
+      if (id) gameContainer.dataset.roomId = id;
+      else delete gameContainer.dataset.roomId;
+    }
+    if (changed) {
+      window.dispatchEvent(new CustomEvent('activeDurakRoomChange', { detail: { roomId: id } }));
+    }
   }
 
   function resetRoom() {
@@ -1061,7 +1066,7 @@ window.DurakRoom = (() => {
     const container = $('durak-open-room-list');
     if (container && window.PublicRooms) {
       publicRoomsUnmount = window.PublicRooms.mount(container, (game, roomCode) =>
-        window.openPublicRoom(game, roomCode));
+        window.openPublicRoom(game, roomCode), 'durak');
     }
   }
 

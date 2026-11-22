@@ -102,6 +102,7 @@ window.TicTacToe = (() => {
     publicRoomsUnmount = window.PublicRooms?.mount(
       root().querySelector('#ttt-open-room-list'),
       (game, roomCode) => window.openPublicRoom(game, roomCode),
+      'tictactoe',
     ) || null;
     root().querySelector('[data-action="back"]').onclick = leaveToHome;
     root().querySelector('[data-action="sound"]').onclick = toggleSound;
@@ -760,8 +761,7 @@ window.TicTacToe = (() => {
     window.renderPlayerAvatar?.(playerAvatars[1], opponent || { name: secondName }, secondName[0] || 'O');
     root().querySelector('[data-action="back"]').onclick = () => {
       if (confirm('Вийти з партії? Ставка не повертається.')) {
-        disposeOnline();
-        renderMenu();
+        void leaveActiveGame();
       }
     };
     root().querySelector('[data-action="sound"]').onclick = toggleSound;
@@ -774,6 +774,29 @@ window.TicTacToe = (() => {
     });
     startTurnTimer();
     return true;
+  }
+
+  async function leaveActiveGame() {
+    const online = state.online;
+    if (online?.db && online.roomData?.meta?.status === 'playing') {
+      try {
+        await online.db.ref(`tictactoeRooms/${online.roomCode}`).transaction((room) => {
+          if (!room || room.meta?.status !== 'playing') return room;
+          const winner = Object.values(room.players || {})
+            .find((player) => String(player.id) !== String(online.uid));
+          room.game ||= {};
+          room.game.winner = winner?.id || null;
+          room.meta.status = 'finished';
+          return room;
+        });
+      } catch (error) {
+        console.error('Unable to finish tic-tac-toe room after a player left', error);
+        notify('Не вдалося завершити партію.');
+        return;
+      }
+    }
+    disposeOnline();
+    renderMenu();
   }
 
   function startTurnTimer() {

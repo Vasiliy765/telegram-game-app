@@ -18,7 +18,7 @@
   let lastReactionKey = '';
   let unsubscribe = null;
 
-  setInterval(() => {
+  function watchActiveRoom() {
     const roomId = getActiveRoomId();
     if (!roomId) {
       if (unsubscribe) unsubscribe();
@@ -50,5 +50,8 @@
     }, (error) => {
       console.error('Firestore reaction sync failed.', error);
     });
-  }, 1500);
+  }
+
+  window.addEventListener('activeDurakRoomChange', watchActiveRoom);
+  watchActiveRoom();
 })();

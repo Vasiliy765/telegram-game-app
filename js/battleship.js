@@ -119,7 +119,8 @@ window.Battleship = (() => {
     </div>`;
     publicRoomsUnmount=window.PublicRooms?.mount(
       root().querySelector('#bs-open-room-list'),
-      (game,roomCode)=>window.openPublicRoom(game,roomCode)
+      (game,roomCode)=>window.openPublicRoom(game,roomCode),
+      'battleship'
     )||null;
     document.getElementById('bs-back').onclick=leave;
     root().querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{
@@ -1071,7 +1072,7 @@ window.Battleship = (() => {
     });
     document.getElementById('bs-fire').onclick=()=>fire(state.target);
     document.getElementById('bs-battle-close').onclick=()=>{
-      if(confirm('Вийти з партії?'))leave();
+      if(confirm('Вийти з партії?'))void leaveActiveGame();
     };
     document.getElementById('bs-sound').onclick=()=>{state.sound=!state.sound;renderBattle();};
   }
@@ -1083,6 +1084,27 @@ window.Battleship = (() => {
     state.payout=payout;
     renderFinal(win);
   }
+
+  async function leaveActiveGame(){
+    const online=state.online;
+    if(online?.db&&['playing','battle'].includes(online.roomData?.meta?.status)){
+      try{
+        await online.db.ref(`battleshipRooms/${online.roomCode}`).transaction(room=>{
+          if(!room||!['playing','battle'].includes(room.meta?.status))return room;
+          const winner=Object.values(room.players||{}).find(player=>String(player.id)!==String(online.uid));
+          room.meta.status='finished';
+          if(winner)room.winner=winner.id;
+          return room;
+        });
+      }catch(error){
+        console.error('Unable to finish Battleship room after a player left',error);
+        notify('Не вдалося завершити партію.');
+        return;
+      }
+    }
+    leave();
+  }
+
   function renderFinal(win){
     const shots=state.playerStats.shots,hits=state.playerStats.hits;
     const accuracy=shots?Math.round(hits/shots*100):0;
