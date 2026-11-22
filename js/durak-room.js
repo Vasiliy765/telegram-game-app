@@ -27,6 +27,8 @@ window.DurakRoom = (() => {
     actionListener: null,
     leaving: false,
     startingGame: false,
+    isMovePending: false,
+    lastReactionId: null,
   };
 
   function randomBotName() {
@@ -97,6 +99,8 @@ window.DurakRoom = (() => {
     state.pendingHand = null;
     state.enteredGame = false;
     state.leaving = false;
+    state.isMovePending = false;
+    state.lastReactionId = null;
   }
 
   function listen(reference, event, callback) {
@@ -378,40 +382,103 @@ window.DurakRoom = (() => {
         await roomReference('meta/status').set('finished');
         state.roomStatus = 'finished';
       }
+      return true;
     } catch (error) {
       console.error('Unable to synchronize the Durak game', error);
       notify('Не вдалося синхронізувати гру. Перевірте правила Firebase та з’єднання.');
+      return false;
     }
   }
 
-  function enqueueAction(action) {
+  async function enqueueAction(action) {
+    if (!state.isOnline || state.isMovePending) return false;
+    state.isMovePending = true;
+    window.DurakMultiplayer.setMovePending(true);
     const reference = roomReference(`actions/${state.myId}`).push();
-    reference.set({ ...action, createdAt: Date.now() }).catch((error) => {
+    let acknowledgementListener;
+    let timeout;
+    try {
+      const acknowledgement = new Promise((resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error('Час очікування підтвердження ходу вичерпано.')), 10000);
+        acknowledgementListener = (snapshot) => {
+          const result = snapshot.val();
+          if (result?.processed === true) resolve(Boolean(result.accepted));
+        };
+        reference.on('value', acknowledgementListener, reject);
+      });
+      await reference.set({ ...action, createdAt: Date.now() });
+      const accepted = await acknowledgement;
+      if (!accepted) notify('Стан гри вже змінився. Спробуй ще раз.');
+      return accepted;
+    } catch (error) {
       console.error('Unable to send the Durak action', error);
-      notify('Не вдалося надіслати хід. Перевірте з’єднання.');
-    });
+      notify('Не вдалося підтвердити хід. Перевірте з’єднання.');
+      return false;
+    } finally {
+      clearTimeout(timeout);
+      if (acknowledgementListener) reference.off('value', acknowledgementListener);
+      state.isMovePending = false;
+      window.DurakMultiplayer.setMovePending(false);
+      try {
+        await reference.remove();
+      } catch (error) {
+        console.error('Unable to remove the processed Durak action', error);
+      }
+    }
   }
 
   function subscribeToActions() {
     if (state.actionListener) return;
     const actions = roomReference('actions');
-    const callback = (snapshot) => {
+    const callback = async (snapshot) => {
       const action = snapshot.val();
       if (!action) return;
-      const accepted = window.DurakMultiplayer.dispatchAction({
-        ...action,
-        playerId: snapshot.ref.parent.key,
-      });
-      if (!accepted) notify('Хід відхилено: стан гри вже змінився.');
-      snapshot.ref.remove().catch((error) => {
-        console.error('Unable to clear a processed Durak action', error);
-      });
+      try {
+        const accepted = await window.DurakMultiplayer.dispatchAction({
+          ...action,
+          playerId: snapshot.ref.parent.key,
+        });
+        await snapshot.ref.update({ processed: true, accepted });
+      } catch (error) {
+        console.error('Unable to process a Durak action', error);
+        try {
+          await snapshot.ref.update({ processed: true, accepted: false });
+        } catch (acknowledgementError) {
+          console.error('Unable to acknowledge the Durak action', acknowledgementError);
+        }
+      }
     };
     actions.on('child_added', callback, (error) => {
       console.error('Firebase action listener failed', error);
       notify('Не вдалося отримати ходи гравців. Перевірте правила Firebase.');
     });
     state.actionListener = { off: () => actions.off('child_added', callback) };
+  }
+
+  async function sendReaction(emoji) {
+    if (!state.isOnline || !state.roomCode || typeof emoji !== 'string') return;
+    try {
+      await roomReference('lastReaction').set({
+        emoji,
+        senderId: state.myId,
+        senderName: playerName(),
+        id: Date.now(),
+      });
+    } catch (error) {
+      console.error('Unable to share a Durak reaction', error);
+      notify('Не вдалося надіслати реакцію.');
+    }
+  }
+
+  function listenToReactions() {
+    listen(roomReference('lastReaction'), 'value', (snapshot) => {
+      const reaction = snapshot.val();
+      const reactionId = Number(reaction?.id);
+      if (!Number.isFinite(reactionId) || reactionId === state.lastReactionId) return;
+      state.lastReactionId = reactionId;
+      if (Date.now() - reactionId > 5000 || Date.now() < reactionId) return;
+      window.DurakMultiplayer.showReaction(reaction.senderId, reaction.emoji);
+    });
   }
 
   function enterOnlineGame() {
@@ -502,6 +569,7 @@ window.DurakRoom = (() => {
       slotsFromSnapshot(snapshot.val());
       renderRoom();
     });
+    listenToReactions();
   }
 
   function randomRoomCode() {
@@ -884,6 +952,7 @@ window.DurakRoom = (() => {
     acceptRoomInvite,
     mountPublicRooms,
     startGame,
+    sendReaction,
     getRoomCode: () => state.roomCode,
   };
 })();

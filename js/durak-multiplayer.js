@@ -316,6 +316,7 @@ window.DurakMultiplayer = (() => {
       localPlayerId,
       localPlayerIndex,
       isTaking: Boolean(snapshotData.isTaking),
+      isMovePending: Boolean(previousGame?.isMovePending),
       isHost: false,
       onAction,
       onStateChange: null,
@@ -353,7 +354,7 @@ window.DurakMultiplayer = (() => {
   function publish() {
     updateStatuses();
     render();
-    if (game.onStateChange) game.onStateChange(snapshot());
+    game.stateChangePromise = Promise.resolve(game.onStateChange?.(snapshot()));
   }
 
   function bindReactions() {
@@ -380,6 +381,7 @@ window.DurakMultiplayer = (() => {
       output.classList.remove('visible');
       void output.offsetWidth;
       output.classList.add('visible');
+      void window.DurakRoom?.sendReaction?.(button.dataset.emoji);
       if (reactionTimer) clearTimeout(reactionTimer);
       reactionTimer = setTimeout(() => {
         output.textContent = '';
@@ -826,6 +828,7 @@ window.DurakMultiplayer = (() => {
     if (mode) mode.textContent = `${game.mode} · ${game.deckSize}`;
     if (ownAvatar) {
       ownAvatar.textContent = localPlayer.name.trim().charAt(0).toUpperCase() || '?';
+      ownAvatar.dataset.playerId = localPlayer.id;
       ownAvatar.dataset.status = localPlayer.status;
       window.renderPlayerAvatar?.(ownAvatar, localPlayer);
     }
@@ -863,6 +866,7 @@ window.DurakMultiplayer = (() => {
 
       const avatar = document.createElement('div');
       avatar.className = 'durak-mp-avatar';
+      avatar.dataset.playerId = player.id;
       if (window.renderPlayerAvatar) window.renderPlayerAvatar(avatar, player);
       else avatar.textContent = player.name.trim().charAt(0).toUpperCase() || '?';
       if (index === game.attackerIndex || index === game.defenderIndex) avatar.classList.add('active');
@@ -925,7 +929,7 @@ window.DurakMultiplayer = (() => {
       const button = document.createElement('button');
       button.className = 'durak-mp-card';
       button.type = 'button';
-      button.disabled = !canPlayerPlay(card);
+      button.disabled = game.isMovePending || !canPlayerPlay(card);
       button.style.setProperty('--card-index', index);
       button.style.setProperty('--card-count', localPlayer.hand.length);
       const cardCenter = (localPlayer.hand.length - 1) / 2;
@@ -950,20 +954,22 @@ window.DurakMultiplayer = (() => {
       const take = document.createElement('button');
       take.className = 'btn take';
       take.textContent = 'Забрати';
+      take.disabled = game.isMovePending;
       take.addEventListener('click', () => takeCards());
       actionsEl.appendChild(take);
     } else if (!playerIsDefender && game.tablePairs.length > 0 && !localPlayer.isOut) {
       const vote = document.createElement('button');
       vote.className = 'btn vote';
       vote.textContent = allBeaten() && !game.isTaking ? 'Бито' : 'Пас';
-      vote.disabled = Boolean(game.passedPlayers[game.localPlayerIndex]);
+      vote.disabled = game.isMovePending || Boolean(game.passedPlayers[game.localPlayerIndex]);
       vote.addEventListener('click', () => passRound());
       actionsEl.appendChild(vote);
     }
   }
 
   function playCard(cardIndex, playerIndex = game?.localPlayerIndex) {
-    if (!game || game.gameOver || !Number.isInteger(playerIndex) || !game.players[playerIndex]) return false;
+    if (!game || game.gameOver || game.isMovePending ||
+        !Number.isInteger(playerIndex) || !game.players[playerIndex]) return false;
     const player = game.players[playerIndex];
     const card = player.hand[cardIndex];
     if (!card || !canPlayerPlay(card, playerIndex)) return false;
@@ -1019,7 +1025,8 @@ window.DurakMultiplayer = (() => {
   }
 
   function passRound(playerIndex = game?.localPlayerIndex) {
-    if (!game || game.gameOver || !Number.isInteger(playerIndex) || !game.players[playerIndex]) return false;
+    if (!game || game.gameOver || game.isMovePending ||
+        !Number.isInteger(playerIndex) || !game.players[playerIndex]) return false;
     if (playerIndex === game.defenderIndex || game.players[playerIndex].isOut ||
         game.tablePairs.length === 0 || game.passedPlayers[playerIndex]) return false;
     if (!game.isHost && game.onAction) {
@@ -1037,7 +1044,7 @@ window.DurakMultiplayer = (() => {
   }
 
   function takeCards(playerIndex = game?.localPlayerIndex) {
-    if (!game || game.gameOver || !Number.isInteger(playerIndex) ||
+    if (!game || game.gameOver || game.isMovePending || !Number.isInteger(playerIndex) ||
         playerIndex !== game.defenderIndex || game.tablePairs.length === 0 || game.isTaking) return false;
     if (!game.isHost && game.onAction) {
       game.onAction({ type: 'take' });
@@ -1052,24 +1059,47 @@ window.DurakMultiplayer = (() => {
     return true;
   }
 
-  function dispatchAction({ playerId, type, cardId } = {}) {
+  async function dispatchAction({ playerId, type, cardId } = {}) {
     if (!game) return false;
     const playerIndex = game.players.findIndex((player) => player.id === playerId);
     if (playerIndex === -1 || game.players[playerIndex].isBot) return false;
 
     if (type === 'rematch') {
       if (playerId !== game.hostId || typeof game.onRematch !== 'function') return false;
-      game.onRematch();
+      await game.onRematch();
       return true;
     }
     if (game.gameOver) return false;
-    if (type === 'pass') return passRound(playerIndex);
-    if (type === 'take') return takeCards(playerIndex);
+    game.stateChangePromise = Promise.resolve();
+    let accepted;
+    if (type === 'pass') accepted = passRound(playerIndex);
+    else if (type === 'take') accepted = takeCards(playerIndex);
     if (type === 'play') {
       const cardIndex = game.players[playerIndex].hand.findIndex((card) => card.id === cardId);
-      return cardIndex !== -1 && playCard(cardIndex, playerIndex);
+      accepted = cardIndex !== -1 && playCard(cardIndex, playerIndex);
     }
-    return false;
+    if (!accepted) return false;
+    const persisted = await game.stateChangePromise;
+    return persisted !== false;
+  }
+
+  function setMovePending(isPending) {
+    if (!game || game.isHost) return;
+    game.isMovePending = Boolean(isPending);
+    render();
+  }
+
+  function showReaction(senderId, emoji) {
+    if (!game || typeof senderId !== 'string' || typeof emoji !== 'string') return;
+    const target = [...document.querySelectorAll('.durak-mp-avatar, #durak-mp-own-avatar')]
+      .find((avatar) => avatar.dataset.playerId === senderId);
+    if (!target) return;
+    target.querySelector('.durak-mp-reaction-bubble')?.remove();
+    const bubble = document.createElement('span');
+    bubble.className = 'durak-mp-reaction-bubble';
+    bubble.textContent = emoji;
+    target.appendChild(bubble);
+    setTimeout(() => bubble.remove(), 1800);
   }
 
   function startGame({
@@ -1149,6 +1179,8 @@ window.DurakMultiplayer = (() => {
       hostId,
       onAction,
       onRematch,
+      isMovePending: false,
+      stateChangePromise: Promise.resolve(),
     };
 
     for (let count = 0; count < handSize; count++) {
@@ -1219,6 +1251,8 @@ window.DurakMultiplayer = (() => {
     take: takeCards,
     dispatchAction,
     render,
+    setMovePending,
+    showReaction,
     getSnapshot: snapshot,
     getPublicSnapshot: publicSnapshot,
     exportState,

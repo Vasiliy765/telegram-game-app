@@ -1717,6 +1717,25 @@ body.durak-game-active .views {
   box-shadow: 0 0 0 3px rgba(240, 68, 83, 0.2), 0 0 16px rgba(240, 68, 83, 0.55);
 }
 
+.durak-mp-reaction-bubble {
+  position: absolute;
+  z-index: 8;
+  top: -24px;
+  left: 50%;
+  font-size: 25px;
+  line-height: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.65));
+  animation: durak-seat-reaction 1.8s ease-out both;
+}
+
+@keyframes durak-seat-reaction {
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(0.7); }
+  15% { opacity: 1; transform: translate(-50%, 0) scale(1.15); }
+  75% { opacity: 1; transform: translate(-50%, -22px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -34px) scale(0.9); }
+}
+
 .durak-mp-player-info {
   position: absolute;
   z-index: 2;

@@ -3,6 +3,7 @@ window.Battleship = (() => {
   const N = 10;
   const SHIPS = [4,3,3,2,2,2,1,1,1,1];
   const LETTERS = ['А','Б','В','Г','Д','Е','Ж','З','И','К'];
+  const SETUP_DURATION_MS = 75000;
   const root = () => document.getElementById('screen-battleship') || document.getElementById('battleship-game');
   let state = {};
   let publicRoomsUnmount = null;
@@ -62,7 +63,8 @@ window.Battleship = (() => {
       enemyResults:{},playerResults:{},playerShips:[],enemyShips:[],selected:null,
       selLen:4,selDir:'h',target:null,turn:'player',timerSeconds:28,botTargets:[],
       playerStats:{shots:0,hits:0,sunk:0},enemyStats:{shots:0,hits:0,sunk:0},sound:true,online:null,
-      matchId:`battleship-${Date.now()}-${Math.random().toString(36).slice(2,10)}`,wagerStarted:false};
+      matchId:`battleship-${Date.now()}-${Math.random().toString(36).slice(2,10)}`,wagerStarted:false,
+      setupInterval:null,setupDeadline:0,setupFinalizing:false};
     render();
     const invite = window.consumeIncomingRoomInvite?.('battleship');
     const roomCode = invite?.roomCode || new URLSearchParams(location.search).get('battleshipRoom');
@@ -71,6 +73,7 @@ window.Battleship = (() => {
 
   function leave() {
     clearInterval(state.interval);
+    clearInterval(state.setupInterval);
     if(state.online?.db&&state.online.unsubscribe){
       state.online.db.ref(`battleshipRooms/${state.online.roomCode}`).off('value',state.online.unsubscribe);
     }
@@ -198,7 +201,8 @@ window.Battleship = (() => {
     state.online={roomCode,isHost:true,uid:backend?.uid||'local-host',db:backend?.db||null,
       localTest:!backend,unsubscribe:null,roomData:null};
     state.mode='online';
-    const host={id:state.online.uid,name:playerName(),...playerProfileFields(),avatar:(playerName()[0]||'Г').toUpperCase(),ready:true,fleet:serializeFleet(randomFleet().ships)};
+    const host={id:state.online.uid,name:playerName(),...playerProfileFields(),avatar:(playerName()[0]||'Г').toUpperCase(),
+      ready:true,shipsPlaced:false,fleet:serializeFleet(randomFleet().ships)};
     const room={meta:{stake:state.stake,bank:state.stake,status:'waiting',hostId:String(host.id),
       creatorId:String(host.telegramId||host.id),hostName:host.name,isPublic:true,createdAt:Date.now(),version:1,round:1},
       players:{[host.id]:host},turn:host.id,shots:{}};
@@ -260,11 +264,19 @@ window.Battleship = (() => {
       state.screen='lobby';state.wagerStarted=false;state.wagerId=null;state.payout=0;
     }
     state.online.roomData=room;
+    if(room.meta?.status==='setup'){
+      startOnlineSetup(room);
+      return;
+    }
     if(room.meta?.status==='playing'||room.meta?.status==='battle'||room.meta?.status==='finished'){
+      clearInterval(state.setupInterval);
+      state.setupInterval=null;
       startOnlineBattle(room);
       if(room.meta?.status==='playing'||room.meta?.status==='battle')scheduleOnlineBotTurn(room);
       return;
     }
+    clearInterval(state.setupInterval);
+    state.setupInterval=null;
     if(state.screen==='lobby')renderLobby();
   }
 
@@ -331,7 +343,7 @@ window.Battleship = (() => {
     const profile=window.getCurrentPlayerProfile?.()||{};
     const player={
       id:online.uid,name:playerName(),...playerProfileFields(),avatar:(playerName()[0]||'Г').toUpperCase(),
-      ready:false,fleet:serializeFleet(randomFleet().ships)
+      ready:false,shipsPlaced:false,fleet:serializeFleet(randomFleet().ships)
     };
     try{
       const result=await window.joinRoomWithStake(`battleshipRooms/${online.roomCode}`,online.roomCode,
@@ -406,8 +418,8 @@ window.Battleship = (() => {
     }
     if(online.localTest){
       if(!canStartBattle(online.roomData)){notify('Усі гравці мають натиснути «Готово».');return;}
-      online.roomData.meta.status='playing';
-      online.roomData.turn=online.roomData.meta.hostId;
+      online.roomData.meta.status='setup';
+      online.roomData.meta.setupDeadline=Date.now()+SETUP_DURATION_MS;
       onOnlineRoom(online.roomData);
       return;
     }
@@ -415,9 +427,8 @@ window.Battleship = (() => {
       const result=await online.db.ref(`battleshipRooms/${online.roomCode}`).transaction(room=>{
         if(!room||String(room.meta?.hostId)!==String(online.uid)||room.meta?.status!=='waiting'||
             !canStartBattle(room))return;
-        room.meta.status='playing';
-        room.turn=String(room.meta.hostId);
-        room.startedAt=Date.now();
+        room.meta.status='setup';
+        room.meta.setupDeadline=Date.now()+SETUP_DURATION_MS;
         return room;
       });
       if(!result.committed)notify('Почати можна, коли всі гравці готові.');
@@ -465,7 +476,8 @@ window.Battleship = (() => {
     if(!online||String(online.uid)!==String(online.roomData.meta?.hostId)||Object.keys(online.roomData.players||{}).length>=2)return;
     const fleet=randomFleet();
     const id=`bot-${Date.now()}`;
-    const opponent={id,name:'ШІ-бот',avatar:'🤖',ready:true,isBot:true,fleet:serializeFleet(fleet.ships)};
+    const opponent={id,name:'ШІ-бот',avatar:'🤖',ready:true,isBot:true,shipsPlaced:true,
+      fleet:serializeFleet(fleet.ships),board:fleet.grid.slice()};
     if(online.localTest){
       online.roomData.players[id]=opponent;
       online.testFleet=fleet;
@@ -636,32 +648,125 @@ window.Battleship = (() => {
     }
   }
 
+  function startOnlineSetup(room){
+    const online=state.online;
+    const own=room.players?.[online?.uid];
+    if(!online||!own)return;
+    const deadline=Number(room.meta?.setupDeadline)||Date.now()+SETUP_DURATION_MS;
+    if(state.screen!=='place'){
+      state.screen='place';
+      state.playerGrid=emptyGrid();
+      state.playerShips=own.shipsPlaced?deserializeFleet(own.fleet||[]):[];
+      state.playerShips.forEach(ship=>ship.cells.forEach(cell=>state.playerGrid[cell]=ship.id));
+      state.enemyResults={};state.playerResults={};
+      state.playerStats={shots:0,hits:0,sunk:0};state.enemyStats={shots:0,hits:0,sunk:0};
+      state.target=null;state.selLen=4;state.selDir='h';
+    }
+    if(state.setupDeadline!==deadline||!state.setupInterval){
+      clearInterval(state.setupInterval);
+      state.setupDeadline=deadline;
+      const tick=()=>{
+        const remaining=Math.max(0,Math.ceil((deadline-Date.now())/1000));
+        const timer=document.getElementById('bs-setup-countdown');
+        if(timer)timer.textContent=`${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`;
+        if(remaining===0){
+          clearInterval(state.setupInterval);
+          state.setupInterval=null;
+          void finalizeOnlineSetup();
+        }
+      };
+      tick();
+      if(deadline>Date.now())state.setupInterval=setInterval(tick,1000);
+    }
+    renderPlace();
+  }
+
+  async function finalizeOnlineSetup(){
+    const online=state.online;
+    if(!online||online.setupFinalizing||online.roomData.meta?.status!=='setup')return;
+    online.setupFinalizing=true;
+    try{
+      if(!online.db){
+        const room=online.roomData;
+        Object.values(room.players||{}).forEach(player=>{
+          if(player.shipsPlaced&&Array.isArray(player.fleet))return;
+          const fleet=randomFleet();
+          player.fleet=serializeFleet(fleet.ships);
+          player.board=fleet.grid.slice();
+          player.shipsPlaced=true;
+        });
+        room.meta.status='playing';
+        room.turn=String(room.meta.hostId);
+        room.startedAt=Date.now();
+        onOnlineRoom(room);
+        return;
+      }
+      const result=await online.db.ref(`battleshipRooms/${online.roomCode}`).transaction(room=>{
+        if(!room||room.meta?.status!=='setup'||Object.keys(room.players||{}).length<2)return;
+        Object.values(room.players).forEach(player=>{
+          if(player.shipsPlaced&&Array.isArray(player.fleet))return;
+          const fleet=randomFleet();
+          player.fleet=serializeFleet(fleet.ships);
+          player.board=fleet.grid.slice();
+          player.shipsPlaced=true;
+        });
+        room.meta.status='playing';
+        room.turn=String(room.meta.hostId);
+        room.meta.startedAt=Date.now();
+        return room;
+      });
+      if(result.snapshot.exists())onOnlineRoom(result.snapshot.val());
+    }catch(error){
+      console.error('Unable to finish Battleship fleet setup',error);
+      notify('Не вдалося завершити розстановку флоту.');
+    }finally{
+      online.setupFinalizing=false;
+    }
+  }
+
   async function confirmOnlineReady(){
     const online=state.online;
-    if(!online)return;
+    if(!online||online.roomData.meta?.status!=='setup'||state.playerShips.length!==10)return;
+    const own=online.roomData.players?.[online.uid];
+    if(!own||own.shipsPlaced)return;
     const fleet=serializeFleet(state.playerShips);
-    const room=online.roomData;
-    if(online.db){
-      try{
-        const result=await online.db.ref(`battleshipRooms/${online.roomCode}`).transaction(current=>{
-          if(!current||current.meta?.status!=='waiting'||!current.players?.[online.uid])return;
-          current.players[online.uid].ready=true;
-          current.players[online.uid].fleet=fleet;
-          return current;
-        });
-        if(result.snapshot.exists())online.roomData=result.snapshot.val();
-      }catch(error){
-        console.error('Unable to publish Battleship fleet readiness',error);
-        notify('Не вдалося зберегти готовність у Firebase.');
+    const board=state.playerGrid.slice();
+    if(!online.db){
+      own.ready=true;
+      own.shipsPlaced=true;
+      own.fleet=fleet;
+      own.board=board;
+      const allPlaced=Object.values(online.roomData.players||{}).length>=2&&
+        Object.values(online.roomData.players).every(player=>player.shipsPlaced);
+      if(allPlaced){
+        online.roomData.meta.status='playing';
+        online.roomData.turn=String(online.roomData.meta.hostId);
+        online.roomData.startedAt=Date.now();
       }
-    }else{
-      const player=room.players[online.uid];
-      player.ready=true;
-      player.fleet=fleet;
-      onOnlineRoom(room);
+      onOnlineRoom(online.roomData);
+      return;
     }
-    state.screen='lobby';
-    renderLobby();
+    try{
+      const result=await online.db.ref(`battleshipRooms/${online.roomCode}`).transaction(room=>{
+        const player=room?.players?.[online.uid];
+        if(!room||room.meta?.status!=='setup'||!player||player.shipsPlaced)return;
+        player.ready=true;
+        player.shipsPlaced=true;
+        player.fleet=fleet;
+        player.board=board;
+        const players=Object.values(room.players);
+        if(players.length>=2&&players.every(item=>item.shipsPlaced)){
+          room.meta.status='playing';
+          room.turn=String(room.meta.hostId);
+          room.meta.startedAt=Date.now();
+        }
+        return room;
+      });
+      if(result.snapshot.exists())onOnlineRoom(result.snapshot.val());
+    }catch(error){
+      console.error('Unable to publish Battleship fleet placement',error);
+      notify('Не вдалося зберегти розстановку флоту.');
+    }
   }
 
   function startPlacement(){
@@ -672,6 +777,8 @@ window.Battleship = (() => {
   }
 
   function placementGridHtml(id){
+    const own=state.online?.roomData?.players?.[state.online.uid];
+    const submitted=state.online?.roomData?.meta?.status==='setup'&&own?.shipsPlaced;
     let h=`<div class="bs-board-coords"><i></i>${LETTERS.map(x=>`<b>${x}</b>`).join('')}</div><div class="bs-board-rowhead">`;
     h+=`<div class="bs-rownums">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<b>${n}</b>`).join('')}</div>`;
     h+=`<div class="bs-grid bs-place-grid" id="${id}">${Array.from({length:N*N},(_,i)=>{
@@ -680,7 +787,7 @@ window.Battleship = (() => {
         const ship=state.playerShips.find(item=>item.id===shipId);
         cls+=` bs-ship ${shipCellClass(ship,i)}`;
       }
-      return `<button type="button" class="${cls}" data-i="${i}" aria-label="${coord(i)}"></button>`;
+      return `<button type="button" class="${cls}" data-i="${i}" aria-label="${coord(i)}" ${submitted?'disabled':''}></button>`;
     }).join('')}</div></div>`;
     return h;
   }
@@ -689,24 +796,31 @@ window.Battleship = (() => {
     state.screen='place';
     const counts={4:1,3:2,2:3,1:4};
     const playerName=state.mode==='local'&&(state.localPhase==='p2')?'Гравець 2':'Твій флот';
+    const room=state.online?.roomData;
+    const setupActive=room?.meta?.status==='setup';
+    const submitted=Boolean(setupActive&&room.players?.[state.online.uid]?.shipsPlaced);
     root().innerHTML=`<div class="bs-screen bs-place">
       <header class="bs-place-head"><button class="bs-back" id="bs-place-back">${state.online?'← Лобі':'← Назад'}</button></header>
-      <div class="bs-place-title"><div><h1>Розстав свій флот</h1><p>${playerName} · 10 кораблів</p></div><div class="bs-place-meta"><span>2:58</span><b>${state.playerShips.length} / 10</b></div></div>
+      <div class="bs-place-title"><div><h1>Розстав свій флот</h1><p>${playerName} · 10 кораблів</p></div><div class="bs-place-meta"><span id="bs-setup-countdown">${setupActive?'1:15':'2:58'}</span><b>${state.playerShips.length} / 10</b></div></div>
       <div class="bs-place-board">${placementGridHtml('bs-place-grid-el')}</div>
-      <p class="bs-place-tip">Перетягни або обери корабель · тап по кораблю на полі — поворот</p>
+      <p class="bs-place-tip">${submitted?'Очікуємо, поки суперник розставить флот…':'Перетягни або обери корабель · тап по кораблю на полі — поворот'}</p>
       <div class="bs-dock">${[4,3,2,1].map(len=>{
         const remaining=counts[len]-state.playerShips.filter(ship=>ship.len===len).length;
-        return `<button type="button" class="bs-dock-item ${state.selLen===len?'active':''}" data-dock="${len}" ${remaining===0?'disabled':''}><span class="bs-mini-ship len-${len}">${Array.from({length:len},()=>'<i></i>').join('')}</span><b>×${remaining}</b></button>`;
+        return `<button type="button" class="bs-dock-item ${state.selLen===len?'active':''}" data-dock="${len}" ${remaining===0||submitted?'disabled':''}><span class="bs-mini-ship len-${len}">${Array.from({length:len},()=>'<i></i>').join('')}</span><b>×${remaining}</b></button>`;
       }).join('')}</div>
-      <div class="bs-place-actions"><button id="bs-random" type="button">Випадково</button><button id="bs-clear" type="button">Очистити</button></div>
-      <button class="bs-go-battle ${state.playerShips.length===10?'ready':''}" id="bs-go-battle" ${state.playerShips.length===10?'':'disabled'} type="button">${state.online?'Готовий до бою':'В бій'}</button>
+      <div class="bs-place-actions"><button id="bs-random" type="button" ${submitted?'disabled':''}>Випадково</button><button id="bs-clear" type="button" ${submitted?'disabled':''}>Очистити</button></div>
+      <button class="bs-go-battle ${state.playerShips.length===10&&!submitted?'ready':''}" id="bs-go-battle" ${state.playerShips.length===10&&!submitted?'':'disabled'} type="button">${submitted?'Очікуємо на суперника…':'В бій'}</button>
     </div>`;
-    document.getElementById('bs-place-back').onclick=()=>state.online?renderLobby():renderMenu();
-    root().querySelectorAll('[data-dock]').forEach(b=>b.onclick=()=>{state.selLen=+b.dataset.dock;renderPlace();});
+    const back=document.getElementById('bs-place-back');
+    back.hidden=setupActive;
+    back.onclick=()=>state.online?renderLobby():renderMenu();
+    root().querySelectorAll('[data-dock]').forEach(b=>b.onclick=()=>{if(submitted)return;state.selLen=+b.dataset.dock;renderPlace();});
     document.getElementById('bs-random').onclick=()=>{
+      if(submitted)return;
       const fleet=randomFleet();state.playerGrid=fleet.grid;state.playerShips=fleet.ships;renderPlace();
     };
     document.getElementById('bs-clear').onclick=()=>{
+      if(submitted)return;
       state.playerGrid=emptyGrid();state.playerShips=[];renderPlace();
     };
     document.getElementById('bs-go-battle').onclick=startBattle;
@@ -716,6 +830,8 @@ window.Battleship = (() => {
   }
 
   function onPlaceClick(i){
+    if(state.online?.roomData?.meta?.status==='setup'&&
+        state.online.roomData.players?.[state.online.uid]?.shipsPlaced)return;
     const shipId=state.playerGrid[i];
     if(shipId){
       const ship=state.playerShips.find(s=>s.id===shipId);
@@ -997,7 +1113,17 @@ window.Battleship = (() => {
       room.meta.status='waiting';
       room.players[state.online.uid].ready=false;
       room.players[state.online.uid].fleet=null;
-      return startPlacement();
+      room.players[state.online.uid].board=null;
+      room.players[state.online.uid].shipsPlaced=false;
+      Object.values(room.players).filter(player=>player.isBot).forEach(player=>{
+        const fleet=randomFleet();
+        player.ready=true;
+        player.fleet=serializeFleet(fleet.ships);
+        player.board=fleet.grid.slice();
+        player.shipsPlaced=true;
+      });
+      onOnlineRoom(room);
+      return;
     }
     const reference=state.online.db.ref(`battleshipRooms/${state.online.roomCode}`);
     try{
@@ -1007,7 +1133,16 @@ window.Battleship = (() => {
         room.meta.status='waiting';
         room.winner=null;room.turn=room.meta.hostId;room.shots={};
         Object.values(room.players||{}).forEach(player=>{
-          player.ready=false;player.fleet=null;
+          player.ready=Boolean(player.isBot);
+          player.fleet=null;
+          player.board=null;
+          player.shipsPlaced=false;
+          if(player.isBot){
+            const fleet=randomFleet();
+            player.fleet=serializeFleet(fleet.ships);
+            player.board=fleet.grid.slice();
+            player.shipsPlaced=true;
+          }
         });
         return room;
       });
