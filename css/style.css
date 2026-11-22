@@ -2065,6 +2065,47 @@ body.durak-game-active .views {
   animation: durak-reaction-pop 1.6s ease-out both;
 }
 
+.durak-mp-reaction-notice {
+  position: fixed;
+  z-index: 10000;
+  top: max(14px, env(safe-area-inset-top));
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(90vw, 360px);
+  padding: 10px 18px;
+  border: 1px solid rgba(255, 224, 141, 0.75);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(48, 34, 20, 0.97), rgba(92, 54, 25, 0.97));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55), 0 0 20px rgba(255, 198, 83, 0.35);
+  color: #fff;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: durak-reaction-notice 2.2s ease-out both;
+}
+
+.durak-mp-reaction-notice-emoji {
+  font-size: 42px;
+  line-height: 1;
+}
+
+.durak-mp-reaction-notice-name {
+  overflow: hidden;
+  color: #ffe6a3;
+  font-size: 16px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes durak-reaction-notice {
+  0% { opacity: 0; transform: translate(-50%, -12px) scale(0.75); }
+  12% { opacity: 1; transform: translate(-50%, 0) scale(1.05); }
+  78% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -16px) scale(0.95); }
+}
+
 @keyframes durak-reaction-pop {
   0% { opacity: 0; transform: translateY(8px) scale(0.65); }
   14% { opacity: 1; transform: translateY(0) scale(1.15); }

@@ -555,6 +555,7 @@ window.DurakRoom = (() => {
       const profile = window.getCurrentPlayerProfile?.() || {};
       const myId = [currentUser?.id, profile.telegramId, state.myId]
         .find((candidate) => candidate != null && String(candidate).trim() !== '');
+      const myName = profile.name || currentUser?.first_name || 'Гравець';
       if (myId == null) {
         console.error('Unable to share a Durak reaction without a player ID.');
         notify('Не вдалося визначити ваш ID для реакції.');
@@ -566,12 +567,14 @@ window.DurakRoom = (() => {
           lastReaction: {
             emoji,
             senderId: String(myId),
-            nonce: Math.random(),
+            senderName: String(myName),
+            nonce: `${Date.now()}_${Math.random()}`,
             ts: Date.now(),
           },
         }, { merge: true });
         console.log('Sent reaction:', roomId, emoji);
         showLocalReaction(emoji, output);
+        window.DurakMultiplayer?.showReaction(String(myId), emoji, String(myName));
       } catch (error) {
         console.error('Unable to share a Durak reaction', error);
         notify('Не вдалося надіслати реакцію.');

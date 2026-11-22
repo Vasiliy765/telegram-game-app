@@ -179,6 +179,10 @@ window.DurakMultiplayer = (() => {
     return game.tablePairs.length > 0 && game.tablePairs.every((pair) => Boolean(pair.defend));
   }
 
+  function unbeatenAttackCount() {
+    return game.tablePairs.filter((pair) => !pair.defend).length;
+  }
+
   function ranksOnTable() {
     const ranks = new Set();
     game.tablePairs.forEach((pair) => {
@@ -197,9 +201,17 @@ window.DurakMultiplayer = (() => {
       const pair = openPair();
       return Boolean(pair && C.beat(pair.attack, card, game.trump.suit));
     }
-    return (game.isTaking || allBeaten()) &&
-      game.tablePairs.length < Math.min(6, game.maxAttacks) &&
+    return game.tablePairs.length < Math.min(6, game.maxAttacks) &&
+      unbeatenAttackCount() < game.players[game.defenderIndex].hand.length &&
       ranksOnTable().has(card.rank);
+  }
+
+  function findBotTosserIndex() {
+    return game.players.findIndex((player, index) =>
+      player.isBot &&
+      index !== game.defenderIndex &&
+      player.hand.some((card) => canPlayerPlay(card, index))
+    );
   }
 
   function allAttackersPassed() {
@@ -663,25 +675,19 @@ window.DurakMultiplayer = (() => {
   function runBotStep() {
     if (!game || game.gameOver) return;
 
-    if (game.isTaking) {
-      const ranks = ranksOnTable();
-      const tosserIndex = game.players.findIndex((player, index) =>
-        player.isBot &&
-        !player.isOut &&
-        index !== game.defenderIndex &&
-        !game.passedPlayers[index] &&
-        game.tablePairs.length < Math.min(6, game.maxAttacks) &&
-        player.hand.some((card) => ranks.has(card.rank))
-      );
+    if (game.tablePairs.length > 0) {
+      const tosserIndex = findBotTosserIndex();
       if (tosserIndex !== -1) {
         const tosser = game.players[tosserIndex];
-        const cardIndex = tosser.hand.findIndex((card) => ranks.has(card.rank));
+        const cardIndex = tosser.hand.findIndex((card) => canPlayerPlay(card, tosserIndex));
         playAttack(tosserIndex, cardIndex);
         publish();
         scheduleBotStep();
         return;
       }
+    }
 
+    if (game.isTaking) {
       const botToPass = game.players.findIndex((player, index) =>
         player.isBot &&
         !player.isOut &&
@@ -768,25 +774,6 @@ window.DurakMultiplayer = (() => {
     }
 
     if (!allBeaten()) return;
-
-    const ranks = ranksOnTable();
-    const tosserIndex = game.players.findIndex((player, index) =>
-      player.isBot &&
-      !player.isOut &&
-      index !== game.defenderIndex &&
-      !game.passedPlayers[index] &&
-      game.tablePairs.length < Math.min(6, game.maxAttacks) &&
-      player.hand.some((card) => ranks.has(card.rank))
-    );
-
-    if (tosserIndex !== -1) {
-      const tosser = game.players[tosserIndex];
-      const cardIndex = tosser.hand.findIndex((card) => ranks.has(card.rank));
-      playAttack(tosserIndex, cardIndex);
-      publish();
-      scheduleBotStep();
-      return;
-    }
 
     const botToPass = game.players.findIndex((player, index) =>
       player.isBot &&
@@ -1046,24 +1033,14 @@ window.DurakMultiplayer = (() => {
       }
     }
 
-    if (game.tablePairs.length === 0 || allBeaten() || game.isTaking) {
-      if (playerIndex !== game.defenderIndex) {
-        playAttack(playerIndex, cardIndex);
-        if (game.tablePairs.length === 1) {
-          game.maxAttacks = Math.min(6, game.players[game.defenderIndex].hand.length);
-        }
-      } else {
-        const pair = openPair();
-        player.hand.splice(cardIndex, 1);
-        pair.defend = card;
-        pair.defenderIndex = playerIndex;
-        setLastAction(playerIndex, 'б’є', card);
-        playCardSound();
-        setMessage('Ви побили карту.');
+    if (playerIndex !== game.defenderIndex) {
+      playAttack(playerIndex, cardIndex);
+      if (game.tablePairs.length === 1) {
+        game.maxAttacks = Math.min(6, game.players[game.defenderIndex].hand.length);
       }
     } else {
       const pair = openPair();
-      if (!pair || playerIndex !== game.defenderIndex) return false;
+      if (game.isTaking || !pair) return false;
       player.hand.splice(cardIndex, 1);
       pair.defend = card;
       pair.defenderIndex = playerIndex;
@@ -1145,33 +1122,22 @@ window.DurakMultiplayer = (() => {
     render();
   }
 
-  function showReaction(senderId, emoji) {
-    if (!game || typeof senderId !== 'string' || typeof emoji !== 'string') return;
-    const sender = game.players.find((player) =>
-      String(player.id) === senderId || String(player.telegramId) === senderId);
-    if (!sender) {
-      console.warn('Durak reaction sender is not present at this table.', senderId);
-      return;
-    }
-    const senderIds = new Set([sender.id, sender.telegramId]
-      .filter((id) => id != null && String(id).trim() !== '')
-      .map(String));
-    const target = [...document.querySelectorAll('.durak-mp-avatar, #durak-mp-own-avatar')]
-      .find((avatar) => senderIds.has(avatar.dataset.playerId) ||
-        senderIds.has(avatar.dataset.telegramId));
-    if (!target) {
-      console.warn('Durak reaction sender avatar is not rendered.', senderId);
-      return;
-    }
-    const bubble = document.createElement('span');
-    const localPlayer = game.players[game.localPlayerIndex];
-    const isSelf = String(senderId) === String(game.localPlayerId) ||
-      String(senderId) === String(localPlayer.telegramId);
-    bubble.className = `durak-mp-reaction-bubble${isSelf ? ' own' : ''}`;
-    bubble.textContent = emoji;
-    bubble.style.fontSize = '40px';
-    target.appendChild(bubble);
-    setTimeout(() => bubble.remove(), 1800);
+  function showReaction(senderId, emoji, senderName = 'Гравець') {
+    if (senderId == null || typeof emoji !== 'string' || !emoji) return;
+    const bubble = document.createElement('div');
+    bubble.className = 'durak-mp-reaction-notice';
+    bubble.setAttribute('role', 'status');
+    bubble.setAttribute('aria-live', 'polite');
+
+    const icon = document.createElement('span');
+    icon.className = 'durak-mp-reaction-notice-emoji';
+    icon.textContent = emoji;
+    const name = document.createElement('span');
+    name.className = 'durak-mp-reaction-notice-name';
+    name.textContent = String(senderName || 'Гравець');
+    bubble.append(icon, name);
+    document.body.appendChild(bubble);
+    setTimeout(() => bubble.remove(), 2200);
   }
 
   function startGame({

@@ -46,7 +46,11 @@
       if (Date.now() - ts > 6000) return;
       const senderId = String(reaction.senderId);
       if (senderId !== String(getCurrentUserId())) {
-        window.DurakMultiplayer?.showReaction(senderId, reaction.emoji);
+        window.DurakMultiplayer?.showReaction(
+          senderId,
+          reaction.emoji,
+          reaction.senderName || 'Гравець',
+        );
       }
     }, (error) => {
       console.error('Firestore reaction sync failed.', error);
