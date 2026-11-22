@@ -1,6 +1,17 @@
 (function () {
   function getActiveRoomId() {
-    return window.DurakRoom?.getRoomCode?.() || '';
+    const containerRoomId = document.getElementById('durak-game')?.dataset.roomId;
+    const roomId = window.activeRoomId || window.currentRoomId || containerRoomId ||
+      window.DurakRoom?.getRoomCode?.();
+    return roomId == null ? '' : String(roomId);
+  }
+
+  function getCurrentUserId() {
+    const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    const profile = window.getCurrentPlayerProfile?.();
+    const profileId = profile?.telegramId;
+    const firebaseUid = window.firebase?.auth?.()?.currentUser?.uid;
+    return telegramId ?? profileId ?? firebaseUid ?? '';
   }
 
   let watchedRoomId = '';
@@ -32,7 +43,10 @@
       if (reactionKey === lastReactionKey) return;
       lastReactionKey = reactionKey;
       if (Date.now() - ts > 6000) return;
-      window.DurakMultiplayer?.showReaction(String(reaction.senderId), reaction.emoji);
+      const senderId = String(reaction.senderId);
+      if (senderId !== String(getCurrentUserId())) {
+        window.DurakMultiplayer?.showReaction(senderId, reaction.emoji);
+      }
     }, (error) => {
       console.error('Firestore reaction sync failed.', error);
     });

@@ -81,6 +81,16 @@ window.DurakRoom = (() => {
     }
   }
 
+  function setActiveRoomId(roomId) {
+    const id = roomId == null ? '' : String(roomId);
+    window.currentRoomId = id;
+    window.activeRoomId = id;
+    const gameContainer = $('durak-game');
+    if (!gameContainer) return;
+    if (id) gameContainer.dataset.roomId = id;
+    else delete gameContainer.dataset.roomId;
+  }
+
   function resetRoom() {
     clearListeners();
     if (state.timerInterval) clearInterval(state.timerInterval);
@@ -101,6 +111,7 @@ window.DurakRoom = (() => {
     state.enteredGame = false;
     state.leaving = false;
     state.isMovePending = false;
+    setActiveRoomId('');
   }
 
   function listen(reference, event, callback) {
@@ -526,24 +537,27 @@ window.DurakRoom = (() => {
         reactionTimer = null;
       }, 1600);
 
-      const roomId = state.isOnline ? state.roomCode : '';
+      const roomId = state.isOnline ? String(state.roomCode) : '';
       if (!roomId) return;
       const currentUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-      if (currentUser?.id == null) {
+      const profile = window.getCurrentPlayerProfile?.() || {};
+      const myId = currentUser?.id ?? profile.telegramId ?? state.myId;
+      if (myId == null) {
         console.error('Unable to share a Durak reaction without a Telegram user ID.');
         notify('Не вдалося визначити ваш Telegram ID для реакції.');
         return;
       }
       try {
         const roomRef = window.FirebaseRoomStore.ref(`rooms/${roomId}`).documentReference();
-        await roomRef.update({
+        await roomRef.set({
           lastReaction: {
             emoji,
-            senderId: String(currentUser.id),
+            senderId: String(myId),
             nonce: Math.random(),
             ts: Date.now(),
           },
-        });
+        }, { merge: true });
+        console.log('Sent reaction:', roomId, emoji);
       } catch (error) {
         console.error('Unable to share a Durak reaction', error);
         notify('Не вдалося надіслати реакцію.');
@@ -744,11 +758,11 @@ window.DurakRoom = (() => {
         state.timerInterval = setInterval(renderRoom, 1000);
         return;
       }
-
       state.isOnline = true;
       state.db = backend.db;
       state.auth = backend.auth;
       state.myId = backend.user.uid;
+      setActiveRoomId(state.roomCode);
       const hostSeat = {
         id: state.myId,
         name: playerName(),
@@ -803,6 +817,7 @@ window.DurakRoom = (() => {
       if (!/^DURAK-[A-Z0-9]{6}$/.test(state.roomCode)) {
         throw new Error('Код кімнати некоректний.');
       }
+      setActiveRoomId(state.roomCode);
 
       const metaSnapshot = await roomReference('meta').once('value');
       const meta = metaSnapshot.val();
