@@ -198,7 +198,7 @@ window.Battleship = (() => {
     state.online={roomCode,isHost:true,uid:backend?.uid||'local-host',db:backend?.db||null,
       localTest:!backend,unsubscribe:null,roomData:null};
     state.mode='online';
-    const host={id:state.online.uid,name:playerName(),...playerProfileFields(),avatar:(playerName()[0]||'Г').toUpperCase(),ready:false,fleet:serializeFleet(randomFleet().ships)};
+    const host={id:state.online.uid,name:playerName(),...playerProfileFields(),avatar:(playerName()[0]||'Г').toUpperCase(),ready:true,fleet:serializeFleet(randomFleet().ships)};
     const room={meta:{stake:state.stake,bank:state.stake,status:'waiting',hostId:String(host.id),hostName:host.name,isPublic:true,createdAt:Date.now(),version:1,round:1},
       players:{[host.id]:host},turn:host.id,shots:{}};
     state.online.roomData=room;
@@ -272,33 +272,42 @@ window.Battleship = (() => {
     const room=state.online.roomData||{};
     const players=Object.values(room.players||{});
     const mine=players.find(player=>String(player.id)===String(state.online.uid));
-    const other=players.find(player=>String(player.id)!==String(state.online.uid));
+    const hostPlayer=players.find(player=>String(player.id)===String(room.meta?.hostId));
+    const guestPlayer=players.find(player=>String(player.id)!==String(room.meta?.hostId));
     const inviteUrl=roomLink();
-    const isHost=String(state.online.uid)===String(room.meta?.hostId);
+    const role=window.getRoomRole?.({id:state.online.uid},room)||{
+      isHost:String(state.online.uid)===String(room.meta?.hostId),
+      isJoined:Boolean(mine),
+    };
+    const {isHost,isJoined}=role;
+    const isJoinPending=!isHost&&!isJoined;
     const joinAvailable=players.length<2&&room.meta?.status==='waiting';
+    const canStart=isHost&&canStartBattle(room);
+    state.online.isHost=isHost;
+    state.online.joinPending=isJoinPending;
     root().innerHTML=`<div class="bs-screen bs-lobby">
       <header class="bs-lobby-head"><button class="bs-back" id="bs-lobby-back">← Назад</button><span>Онлайн 1 на 1</span></header>
       <div class="bs-lobby-content">
         <div class="bs-lobby-stake">Ставка <b>🪙 ${Number(room.meta?.stake)||state.stake}</b> · Банк <b>🪙 ${Number(room.meta?.bank)||players.length*state.stake}</b></div>
         <div class="bs-lobby-slots">
-          <div class="bs-lobby-player"><span class="bs-lobby-avatar${mine?.ready?' ready':''}">${escapeHtml(mine?.isBot?'🤖':mine?.avatar||'Я')}</span><strong>${escapeHtml(mine?.name||'Ти')}</strong><small>${mine?.ready?'✅ Готовий':'Очікує'}</small></div>
+          <div class="bs-lobby-player"><span class="bs-lobby-avatar${isHost||hostPlayer?.ready?' ready':''}">${escapeHtml(hostPlayer?.isBot?'🤖':hostPlayer?.avatar||'👑')}</span><strong>${escapeHtml(hostPlayer?.name||room.meta?.hostName||'Господар')}</strong><small>${isHost||hostPlayer?.ready?'✅ Готовий':'Очікує'}</small></div>
           <span class="bs-vs">VS</span>
-          <div class="bs-lobby-player${state.online.joinPending&&joinAvailable?' bs-open-seat':''}" ${state.online.joinPending&&joinAvailable?'id="bs-open-seat" role="button" tabindex="0"':''}><span class="bs-lobby-avatar${other?.ready?' ready':''}">${escapeHtml(other?.isBot?'🤖':other?.avatar||'＋')}</span><strong>${escapeHtml(other?.name||'＋ Вільне місце')}</strong><small>${other?.ready?'✅ Готовий':'Очікуємо друга'}</small></div>
+          <div class="bs-lobby-player${isJoinPending&&joinAvailable?' bs-open-seat':''}" ${isJoinPending&&joinAvailable?'id="bs-open-seat" role="button" tabindex="0"':''}><span class="bs-lobby-avatar${guestPlayer?.ready?' ready':''}">${escapeHtml(guestPlayer?.isBot?'🤖':guestPlayer?.avatar||'＋')}</span><strong>${escapeHtml(guestPlayer?.name||'＋ Вільне місце')}</strong><small>${guestPlayer?.ready?'✅ Готовий':'Очікуємо друга'}</small></div>
         </div>
         <div class="bs-room-code">Код кімнати <strong>${state.online.roomCode}</strong></div>
         ${isHost?'<button class="bs-lobby-action primary" id="bs-invite">Надіслати запрошення в чат</button><button class="bs-lobby-action" id="bs-copy">Скопіювати посилання</button>':''}
         ${isHost&&players.length<2?'<button class="bs-lobby-action" id="bs-add-ai">🤖 + Додати ШІ-бота</button>':''}
-        ${state.online.joinPending?(joinAvailable?`<button class="bs-lobby-action primary" id="bs-join">Приєднатися до столу (ставка: ${Number(room.meta?.stake)||state.stake} 🪙)</button>`:'<div class="bs-online-status">У кімнаті немає вільного місця.</div>'):''}
-        ${!state.online.joinPending?`<button class="bs-lobby-action primary" id="bs-ready">${mine?.ready?'Не готовий ❌':'Готово ✅'}</button><button class="bs-lobby-action" id="bs-arrange" ${mine?.isBot?'disabled':''}>⚓ Розставити флот</button>`:''}
-        ${isHost&&!state.online.joinPending?`<button class="bs-lobby-action primary" id="bs-start" ${canStartBattle(room)?'':'disabled'}>Почати гру</button>`:''}
+        ${isJoinPending?(joinAvailable?`<button class="bs-lobby-action primary" id="bs-join">Приєднатися до столу (ставка: ${Number(room.meta?.stake)||state.stake} 🪙)</button>`:'<div class="bs-online-status">У кімнаті немає вільного місця.</div>'):''}
+        ${!isHost&&isJoined?`<button class="bs-lobby-action primary" id="bs-ready">${mine?.ready?'Не готовий ❌':'Готово ✅'}</button>`:''}
+        ${isHost?`<button class="bs-lobby-action${canStart?' primary':''}" id="bs-start" ${canStart?'':'disabled'}>Почати гру</button>`:''}
         <p class="bs-lobby-hint">${isHost&&inviteUrl?'Поділися посиланням і дочекайся готовності суперника.':''}</p>
-        ${state.online.joinPending?'':`<div class="bs-online-status">${room.meta?.status==='playing'||room.meta?.status==='battle'?'Гра починається…':`Готові: ${players.filter(player=>player.ready||player.isBot).length}/2`}</div>`}
-        <button class="bs-lobby-action" id="bs-lobby-back">${state.online.joinPending||isHost?'← Назад':'Вийти зі столу'}</button>
+        ${isJoinPending?'':`<div class="bs-online-status">${room.meta?.status==='playing'||room.meta?.status==='battle'?'Гра починається…':`Готові: ${players.filter(player=>String(player.id)===String(room.meta?.hostId)||player.ready||player.isBot).length}/2`}</div>`}
+        <button class="bs-lobby-action" id="bs-lobby-back">${isJoinPending||isHost?'← Назад':'Вийти зі столу'}</button>
       </div>
     </div>`;
     const avatars=root().querySelectorAll('.bs-lobby-avatar');
-    window.renderPlayerAvatar?.(avatars[0],mine||{name:'Я'},mine?.isBot?'🤖':'Я');
-    window.renderPlayerAvatar?.(avatars[1],other||{name:'Суперник'},other?.isBot?'🤖':'＋');
+    window.renderPlayerAvatar?.(avatars[0],hostPlayer||{name:'Господар'},hostPlayer?.isBot?'🤖':'👑');
+    window.renderPlayerAvatar?.(avatars[1],guestPlayer||{name:'Вільне місце'},guestPlayer?.isBot?'🤖':'＋');
     document.getElementById('bs-lobby-back').onclick=()=>{void leaveLobby();};
     document.getElementById('bs-invite')?.addEventListener('click',shareRoomLink);
     document.getElementById('bs-copy')?.addEventListener('click',()=>{void copyRoomLink();});
@@ -309,7 +318,6 @@ window.Battleship = (() => {
     openSeat?.addEventListener('keydown',event=>{
       if(event.key==='Enter'||event.key===' '){event.preventDefault();void acceptRoomInvite();}
     });
-    document.getElementById('bs-arrange')?.addEventListener('click',()=>{void editFleet();});
     document.getElementById('bs-ready')?.addEventListener('click',()=>{void toggleOnlineReady();});
     document.getElementById('bs-start')?.addEventListener('click',()=>{void startOnlineGame();});
   }
@@ -350,7 +358,8 @@ window.Battleship = (() => {
 
   function canStartBattle(room){
     const players=Object.values(room.players||{});
-    return players.length>=2&&players.every(player=>player.ready||player.isBot);
+    return players.length>=2&&players.every(player=>
+      String(player.id)===String(room.meta?.hostId)||player.ready||player.isBot);
   }
 
   async function toggleOnlineReady(){

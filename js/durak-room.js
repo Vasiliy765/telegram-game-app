@@ -121,7 +121,7 @@ window.DurakRoom = (() => {
       const element = document.createElement('div');
       element.className = 'room-slot';
       if (slot.isHost) element.classList.add('host');
-      if (slot.joined && slot.isReady) element.classList.add('ready');
+      if (slot.joined && (slot.isHost || slot.isReady)) element.classList.add('ready');
       if (!slot.joined) element.classList.add('empty');
       if (!slot.joined && state.joinPending) {
         element.classList.add('joinable');
@@ -159,33 +159,40 @@ window.DurakRoom = (() => {
 
   function canStart() {
     const joined = state.slots.filter((slot) => slot.joined);
-    return state.isHost && joined.length >= 2 && joined.every((slot) => slot.isBot || slot.isReady);
+    return state.isHost && joined.length >= 2 &&
+      joined.every((slot) => slot.isHost || slot.isBot || slot.isReady);
   }
 
   function renderControls() {
     const startButton = $('durak-room-ready');
-    const hostReadyButton = $('durak-room-host-ready');
     const joinButton = $('durak-room-join');
     const addButton = $('durak-room-add-test');
     const inviteButton = $('durak-room-invite');
     const copyButton = $('durak-room-copy');
+    const role = window.getRoomRole?.(
+      { id: state.myId },
+      { meta: state.roomMeta, seats: state.slots },
+    );
+    const isHost = state.isOnline && role ? role.isHost : state.isHost;
+    const isJoined = role?.isJoined ?? state.slots.some((slot) => slot.joined &&
+      String(slot.id) === String(state.myId));
+    const isJoinPending = state.isOnline && !isHost && !isJoined;
     const ownSeat = state.slots.find((slot) => String(slot.id) === String(state.myId));
+    state.isHost = isHost;
+    state.joinPending = isJoinPending;
     if (startButton) {
-      startButton.textContent = state.isHost
+      startButton.textContent = isHost
         ? 'Почати гру'
         : ownSeat?.isReady ? 'Не готовий ❌' : 'Готово ✅';
-      startButton.disabled = state.roomStarted || (state.isHost && !canStart());
-      startButton.classList.toggle('btn-primary', state.isHost);
-      startButton.hidden = state.joinPending || (!state.isHost && !ownSeat);
-    }
-    if (hostReadyButton) {
-      hostReadyButton.textContent = ownSeat?.isReady ? 'Не готовий ❌' : 'Готово ✅';
-      hostReadyButton.disabled = state.roomStarted || !state.isHost || !ownSeat;
-      hostReadyButton.hidden = !state.isHost;
+      const canHostStart = isHost && canStart();
+      startButton.disabled = state.roomStarted || (isHost && !canHostStart);
+      startButton.classList.toggle('btn-ready', !isHost || canHostStart);
+      startButton.classList.toggle('btn-primary', canHostStart);
+      startButton.hidden = isJoinPending || (!isHost && !isJoined);
     }
     if (joinButton) {
       const emptySeat = state.slots.some((slot) => !slot.joined && !slot.isHost);
-      joinButton.hidden = !state.joinPending;
+      joinButton.hidden = !isJoinPending;
       joinButton.disabled = state.roomStarted || !emptySeat;
       joinButton.textContent = `Приєднатися до гри (ставка: ${state.settings.stake} 🪙)`;
     }
@@ -193,15 +200,15 @@ window.DurakRoom = (() => {
       const hasEmptySlot = state.slots.some((slot) => !slot.joined && !slot.isHost);
       addButton.disabled = state.roomStarted || !state.isHost || !hasEmptySlot;
       addButton.textContent = hasEmptySlot ? '🤖 + Додати ШІ-бота' : 'Усі місця зайняті';
-      addButton.hidden = !state.isHost;
+      addButton.hidden = !isHost || !hasEmptySlot;
     }
     if (inviteButton) {
       inviteButton.disabled = !state.isOnline || state.roomStarted;
-      inviteButton.hidden = !state.isHost;
+      inviteButton.hidden = !isHost;
     }
     if (copyButton) {
       copyButton.disabled = !state.isOnline || state.roomStarted;
-      copyButton.hidden = !state.isHost;
+      copyButton.hidden = !isHost;
     }
   }
 
@@ -232,7 +239,7 @@ window.DurakRoom = (() => {
     const status = $('durak-room-status');
     if (status) {
       const joined = state.slots.filter((slot) => slot.joined);
-      const readyCount = joined.filter((slot) => slot.isBot || slot.isReady).length;
+      const readyCount = joined.filter((slot) => slot.isHost || slot.isBot || slot.isReady).length;
       status.textContent = state.roomStarted
         ? 'Гра вже почалася'
         : state.joinPending
@@ -564,9 +571,10 @@ window.DurakRoom = (() => {
         state.slots = [{
           id: state.myId,
           name: playerName(),
+          avatar: (playerName()[0] || 'Г').toUpperCase(),
           ...playerProfileFields(),
           isHost: true,
-          isReady: false,
+          isReady: true,
           isBot: false,
           joined: true,
         }];
@@ -593,10 +601,11 @@ window.DurakRoom = (() => {
       const hostSeat = {
         id: state.myId,
         name: playerName(),
+        avatar: (playerName()[0] || 'Г').toUpperCase(),
         ...playerProfileFields(),
         position: 0,
         isHost: true,
-        isReady: false,
+        isReady: true,
         isBot: false,
         joined: true,
       };
@@ -682,6 +691,7 @@ window.DurakRoom = (() => {
       id: state.myId,
       telegramId: profile.telegramId || '',
       name: playerName(),
+      avatar: (playerName()[0] || 'Г').toUpperCase(),
       ...playerProfileFields(),
       isHost: false,
       isReady: false,
@@ -825,7 +835,6 @@ window.DurakRoom = (() => {
 
   function bindControls() {
     const startButton = $('durak-room-ready');
-    const hostReadyButton = $('durak-room-host-ready');
     const joinButton = $('durak-room-join');
     const addButton = $('durak-room-add-test');
     const inviteButton = $('durak-room-invite');
@@ -833,7 +842,6 @@ window.DurakRoom = (() => {
     const exitButton = $('durak-room-exit');
 
     if (startButton) startButton.onclick = state.isHost ? startGame : toggleReady;
-    if (hostReadyButton) hostReadyButton.onclick = toggleReady;
     if (joinButton) joinButton.onclick = () => { void acceptRoomInvite(); };
     if (addButton) addButton.onclick = addTestPlayer;
     if (inviteButton) inviteButton.onclick = openInvite;

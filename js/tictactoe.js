@@ -166,8 +166,9 @@ window.TicTacToe = (() => {
       username: profile.username,
       photoUrl: profile.photoUrl,
       name: profile.name,
+      avatar: (profile.name || 'Г').charAt(0).toUpperCase(),
       symbol: 'X',
-      ready: false,
+      ready: true,
       isBot: false,
     };
     const room = {
@@ -264,10 +265,20 @@ window.TicTacToe = (() => {
     const room = state.online?.roomData || {};
     const players = Object.values(room.players || {});
     const mine = players.find((player) => String(player.id) === String(state.online.uid));
-    const opponent = players.find((player) => String(player.id) !== String(state.online.uid));
+    const hostPlayer = players.find((player) => String(player.id) === String(room.meta?.hostId));
+    const guestPlayer = players.find((player) => String(player.id) !== String(room.meta?.hostId));
     const link = roomLink();
-    const isHost = String(state.online.uid) === String(room.meta?.hostId);
+    const role = window.getRoomRole?.({ id: state.online.uid }, room)
+      || {
+        isHost: String(state.online.uid) === String(room.meta?.hostId),
+        isJoined: Boolean(mine),
+      };
+    const { isHost, isJoined } = role;
+    const isJoinPending = !isHost && !isJoined;
     const joinAvailable = players.length < 2 && room.meta?.status === 'waiting';
+    const canStart = isHost && canStartOnlineRoom(room);
+    state.online.isHost = isHost;
+    state.online.joinPending = isJoinPending;
     const notice = state.online.localTest
       ? 'Локальне тестове лобі. Для гри з другом налаштуй Firebase.'
       : 'Поділися посиланням і дочекайся готовності обох гравців.';
@@ -277,23 +288,23 @@ window.TicTacToe = (() => {
           <h1 class="ttt-title">Онлайн 1 на 1</h1>
           <p class="ttt-subtitle">Ставка 🪙 ${Number(room.meta?.stake) || state.stake} · Банк 🪙 ${Number(room.meta?.bank) || (players.length * state.stake)}</p>
           <div class="ttt-lobby-players">
-            <div class="ttt-player-card"><span class="ttt-avatar${mine?.ready ? ' ready' : ''}">${escapeHtml(mine?.isBot ? '🤖' : mine?.name?.[0] || 'Я')}</span><b>${escapeHtml(mine?.name || 'Ти')} · ✕</b><small>${mine?.ready ? '✅ Готовий' : 'Очікує'}</small></div>
+            <div class="ttt-player-card"><span class="ttt-avatar${isHost || hostPlayer?.ready ? ' ready' : ''}">${escapeHtml(hostPlayer?.isBot ? '🤖' : hostPlayer?.name?.[0] || '👑')}</span><b>${escapeHtml(hostPlayer?.name || room.meta?.hostName || 'Господар')} · ✕</b><small>${isHost || hostPlayer?.ready ? '✅ Готовий' : 'Очікує'}</small></div>
             <span>VS</span>
-            <div class="ttt-player-card${state.online.joinPending && joinAvailable ? ' ttt-open-seat' : ''}" ${state.online.joinPending && joinAvailable ? 'data-action="join-seat" role="button" tabindex="0"' : ''}><span class="ttt-avatar${opponent?.ready ? ' ready' : ''}">${escapeHtml(opponent?.isBot ? '🤖' : opponent?.name?.[0] || '+')}</span><b>${escapeHtml(opponent?.name || '＋ Вільне місце')} · ○</b><small>${opponent?.ready ? '✅ Готовий' : 'Очікуємо друга'}</small></div>
+            <div class="ttt-player-card${isJoinPending && joinAvailable ? ' ttt-open-seat' : ''}" ${isJoinPending && joinAvailable ? 'data-action="join-seat" role="button" tabindex="0"' : ''}><span class="ttt-avatar${guestPlayer?.ready ? ' ready' : ''}">${escapeHtml(guestPlayer?.isBot ? '🤖' : guestPlayer?.name?.[0] || '+')}</span><b>${escapeHtml(guestPlayer?.name || '＋ Вільне місце')} · ○</b><small>${guestPlayer?.ready ? '✅ Готовий' : 'Очікуємо друга'}</small></div>
           </div>
-          <div class="ttt-lobby-hint">${state.online.joinPending ? 'Кімната відкрита. Приєднайтеся, щоб зайняти місце.' : !isHost ? 'Очікування початку гри...' : `Код кімнати: <b>${escapeHtml(state.online.roomCode)}</b><br>${notice}<br>Готові: ${players.filter((player) => player.ready).length}/2`}</div>
+          <div class="ttt-lobby-hint">${isJoinPending ? 'Кімната відкрита. Приєднайтеся, щоб зайняти місце.' : !isHost ? 'Очікування початку гри...' : `Код кімнати: <b>${escapeHtml(state.online.roomCode)}</b><br>${notice}<br>Готові: ${players.filter((player) => String(player.id) === String(room.meta?.hostId) || player.ready || player.isBot).length}/2`}</div>
           ${isHost ? '<button class="ttt-lobby-action" type="button" data-action="invite">Надіслати запрошення в чат</button><button class="ttt-lobby-action" type="button" data-action="copy">Скопіювати посилання</button>' : ''}
           ${isHost && players.length < 2 ? '<button class="ttt-lobby-action" type="button" data-action="ai">🤖 + Додати ШІ-бота</button>' : ''}
           ${state.fundingError ? '<p class="ttt-lobby-hint">Недостатньо монет для цієї ставки.</p>' : ''}
-          ${state.online.joinPending ? (joinAvailable ? `<button class="ttt-primary ttt-join-table" type="button" data-action="join">Приєднатися до столу (ставка: ${Number(room.meta?.stake) || state.stake} 🪙)</button>` : '<p class="ttt-lobby-hint">У кімнаті немає вільного місця.</p>') : ''}
-          ${!state.online.joinPending ? `<button class="ttt-primary" type="button" data-action="ready">${mine?.ready ? 'Не готовий ❌' : 'Готово ✅'}</button>` : ''}
-          ${isHost && !state.online.joinPending ? `<button class="ttt-primary" type="button" data-action="start" ${!canStartOnlineRoom(room) ? 'disabled' : ''}>Почати гру</button>` : ''}
-          <button class="ttt-secondary" type="button" data-action="back">${state.online.joinPending || isHost ? '← Назад' : 'Вийти зі столу'}</button>
+          ${isJoinPending ? (joinAvailable ? `<button class="ttt-primary ttt-join-table" type="button" data-action="join">Приєднатися до столу (ставка: ${Number(room.meta?.stake) || state.stake} 🪙)</button>` : '<p class="ttt-lobby-hint">У кімнаті немає вільного місця.</p>') : ''}
+          ${!isHost && isJoined ? `<button class="ttt-primary" type="button" data-action="ready">${mine?.ready ? 'Не готовий ❌' : 'Готово ✅'}</button>` : ''}
+          ${isHost ? `<button class="${canStart ? 'ttt-primary' : 'ttt-secondary'}" type="button" data-action="start" ${canStart ? '' : 'disabled'}>Почати гру</button>` : ''}
+          <button class="ttt-secondary" type="button" data-action="back">${isJoinPending || isHost ? '← Назад' : 'Вийти зі столу'}</button>
         </div>
       </main>`)) return;
     const lobbyAvatars = root().querySelectorAll('.ttt-lobby-players .ttt-avatar');
-    window.renderPlayerAvatar?.(lobbyAvatars[0], mine || { name: 'Ти' }, mine?.isBot ? '🤖' : 'Т');
-    window.renderPlayerAvatar?.(lobbyAvatars[1], opponent || { name: 'Суперник' }, opponent?.isBot ? '🤖' : '＋');
+    window.renderPlayerAvatar?.(lobbyAvatars[0], hostPlayer || { name: 'Господар' }, hostPlayer?.isBot ? '🤖' : '👑');
+    window.renderPlayerAvatar?.(lobbyAvatars[1], guestPlayer || { name: 'Вільне місце' }, guestPlayer?.isBot ? '🤖' : '＋');
     root().querySelector('[data-action="sound"]').onclick = toggleSound;
     root().querySelector('[data-action="invite"]')?.addEventListener('click', shareRoom);
     root().querySelector('[data-action="copy"]')?.addEventListener('click', () => { void copyRoom(); });
@@ -322,6 +333,7 @@ window.TicTacToe = (() => {
       username: profile.username || '',
       photoUrl: profile.photoUrl || '',
       name: profile.name || 'Гравець',
+      avatar: (profile.name || 'Г').charAt(0).toUpperCase(),
       symbol: 'O',
       ready: false,
       isBot: false,
@@ -428,7 +440,8 @@ window.TicTacToe = (() => {
 
   function canStartOnlineRoom(room) {
     const players = Object.values(room.players || {});
-    return players.length >= 2 && players.every((player) => player.ready || player.isBot);
+    return players.length >= 2 && players.every((player) =>
+      String(player.id) === String(room.meta?.hostId) || player.ready || player.isBot);
   }
 
   async function toggleReady() {

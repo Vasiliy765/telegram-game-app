@@ -67,6 +67,19 @@
     return `https://t.me/SecretAgentGame646Bot?startapp=room_${encodeURIComponent(roomCode.trim())}`;
   };
 
+  window.getRoomRole = function getRoomRole(currentUser, room) {
+    const currentId = currentUser?.id ?? currentUser?.uid;
+    const hostId = room?.meta?.hostId ?? room?.hostId;
+    const players = room?.seats ?? room?.players ?? {};
+    const entries = Array.isArray(players) ? players.entries() : Object.entries(players);
+    const isJoined = currentId != null && [...entries].some(([key, player]) =>
+      player && String(player.id ?? key) === String(currentId));
+    return {
+      isHost: currentId != null && hostId != null && String(currentId) === String(hostId),
+      isJoined,
+    };
+  };
+
   const publicRoomMounts = new WeakMap();
 
   window.PublicRooms = {
