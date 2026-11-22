@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const crypto = require('node:crypto');
+const http = require('node:http');
 const path = require('node:path');
 const { Bot } = require('node-telegram-bot-api');
 const { run } = require('node-telegram-bot-api/node');
@@ -10,10 +11,12 @@ if (!process.env.BOT_TOKEN) {
   throw new Error('BOT_TOKEN is required. Set it in .env before starting the bot.');
 }
 
+const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT !== undefined
+  ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+  : require(path.join(__dirname, 'serviceAccountKey.json'));
+
 admin.initializeApp({
-  credential: admin.credential.cert(
-    require(path.join(__dirname, 'serviceAccountKey.json')),
-  ),
+  credential: admin.credential.cert(serviceAccount),
 });
 
 const db = admin.firestore();
@@ -548,6 +551,19 @@ bot.on('callback_query', async (context) => {
 bot.catch((error) => {
   console.error('Telegram update failed:', error);
 });
+
+const server = http.createServer((request, response) => {
+  if (request.method === 'GET' && request.url === '/') {
+    response.writeHead(200, { 'Content-Type': 'text/plain' });
+    response.end('Bot is running');
+    return;
+  }
+
+  response.writeHead(404);
+  response.end();
+});
+
+server.listen(process.env.PORT || 3000);
 
 async function startBot() {
   await bot.api.deleteWebhook({ drop_pending_updates: true });
