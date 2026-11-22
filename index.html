@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#0f172a">
   <title>Ігровий центр · Telegram Mini App</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=21">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <div id="app">
@@ -23,6 +23,7 @@
     <nav class="bottom-nav">
       <button class="nav-item active" data-view="home" aria-label="Ігри"><span class="nav-icon">🎮</span><span class="nav-label">Ігри</span></button>
       <button class="nav-item" data-view="store" aria-label="Монети"><span class="nav-icon">🪙</span><span class="nav-label">Монети</span></button>
+      <button class="nav-item" data-view="top" aria-label="Топ гравців"><span class="nav-icon">🏆</span><span class="nav-label">Топ</span></button>
       <button class="nav-item" data-view="commands" aria-label="РП / Міні-ігри"><span class="nav-icon">🎲</span><span class="nav-label">Міні-ігри</span></button>
       <button class="nav-item" data-view="profile" aria-label="Профіль"><span class="nav-icon">👤</span><span class="nav-label">Профіль</span></button>
     </nav>
@@ -61,17 +62,21 @@
               <div class="game-arrow">▶</div>
             </div>
           </div>
-          <section class="leaderboard-card" aria-labelledby="leaderboard-title">
-            <div class="leaderboard-heading">
-              <h2 id="leaderboard-title">Топ гравців</h2>
-              <span>За балансом 🪙</span>
-            </div>
-            <div class="leaderboard-list" id="leaderboard-list" aria-live="polite">
-              <p class="leaderboard-message">Завантаження рейтингу…</p>
-            </div>
-          </section>
           <button class="btn-create btn primary" id="home-create-table">Створити стіл</button>
         </div>
+      </section>
+
+      <section id="view-top" class="view">
+        <div class="game-header"><button class="back-btn" data-view="home">← Назад</button><h2>Топ 🏆</h2></div>
+        <section class="leaderboard-card" aria-labelledby="leaderboard-title">
+          <div class="leaderboard-heading">
+            <h2 id="leaderboard-title">Топ гравців</h2>
+            <span>За балансом 🪙</span>
+          </div>
+          <div class="leaderboard-list" id="leaderboard-list" aria-live="polite">
+            <p class="leaderboard-message">Завантаження рейтингу…</p>
+          </div>
+        </section>
       </section>
 
       <section id="view-store" class="view">
@@ -353,19 +358,19 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=18"></script>
-    <script src="js/firestore-room-store.js?v=2"></script>
-  <script src="js/twa.js?v=17"></script>
-    <script src="js/game.js?v=24"></script>
-  <script src="js/router.js?v=18"></script>
-  <script src="js/cards.js?v=17"></script>
-  <script src="js/durak.js?v=18"></script>
-  <script src="js/battleship.js?v=21"></script>
-  <script src="js/tictactoe.js?v=21"></script>
-  <script src="js/store.js?v=18"></script>
-  <script src="js/durak-room.js?v=21"></script>
-  <script src="js/durak-multiplayer.js?v=19"></script>
-  <script src="js/main.js?v=19"></script>
+    <script src="js/firebase-config.js?v=4"></script>
+    <script src="js/firestore-room-store.js?v=4"></script>
+    <script src="js/twa.js?v=4"></script>
+    <script src="js/game.js?v=4"></script>
+    <script src="js/router.js?v=4"></script>
+    <script src="js/cards.js?v=4"></script>
+    <script src="js/durak.js?v=4"></script>
+    <script src="js/battleship.js?v=4"></script>
+    <script src="js/tictactoe.js?v=4"></script>
+    <script src="js/store.js?v=4"></script>
+    <script src="js/durak-room.js?v=4"></script>
+    <script src="js/durak-multiplayer.js?v=4"></script>
+    <script src="js/main.js?v=4"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (new URLSearchParams(window.location.search).has('battleshipRoom')) {

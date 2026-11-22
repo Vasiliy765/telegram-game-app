@@ -126,7 +126,7 @@
       return;
     }
 
-    entries.slice(0, 10).forEach((player, index) => {
+    entries.forEach((player, index) => {
       const row = document.createElement('div');
       row.className = 'leaderboard-player';
       const place = document.createElement('span');
@@ -252,7 +252,6 @@
 
     firestore.collection('users')
       .orderBy('balance', 'desc')
-      .limit(10)
       .onSnapshot(renderLeaderboard, (error) => {
         console.error('Unable to load the Firestore user leaderboard.', error);
         setLeaderboardMessage('Не вдалося завантажити рейтинг.');

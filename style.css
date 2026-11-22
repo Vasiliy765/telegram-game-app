@@ -74,6 +74,39 @@ body {
 .bottom-nav {
   width: 100%;
   max-width: none;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  background: #18181f;
+}
+
+.nav-item {
+  min-width: 0;
+  padding-right: 2px;
+  padding-left: 2px;
+}
+
+.nav-item.active {
+  background: rgba(244, 63, 94, 0.14);
+  color: #f43f5e;
+}
+
+.nav-label {
+  font-size: clamp(8px, 2.4vw, 10px);
+  white-space: nowrap;
+}
+
+#view-top .leaderboard-card {
+  border-color: #2b2b35;
+  background: #18181f;
+}
+
+#view-top .leaderboard-heading > span,
+#view-top .leaderboard-place,
+#view-top .leaderboard-balance {
+  color: #f43f5e;
+}
+
+#view-top .leaderboard-player {
+  background: #0f0f13;
 }
 
 .btn,
