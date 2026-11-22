@@ -10,10 +10,6 @@ if (!process.env.BOT_TOKEN) {
   throw new Error('BOT_TOKEN is required. Set it in .env before starting the bot.');
 }
 
-if (!process.env.WEBAPP_URL) {
-  throw new Error('WEBAPP_URL is required. Set it in .env before starting the bot.');
-}
-
 admin.initializeApp({
   credential: admin.credential.cert(
     require(path.join(__dirname, 'serviceAccountKey.json')),
@@ -24,6 +20,7 @@ const db = admin.firestore();
 const users = db.collection('users');
 const challenges = db.collection('challenges');
 const bot = new Bot(process.env.BOT_TOKEN);
+const WEBAPP_URL = 'https://vasiliy765.github.io/telegram-game-app/';
 
 function sendMessage(chatId, text, options = {}) {
   return bot.api.sendMessage({ chat_id: chatId, text, ...options });
@@ -80,7 +77,7 @@ async function ensureUser(user) {
         id: user.id,
         name: displayName(user),
         username: user.username || '',
-        balance: 500,
+        balance: 100,
       });
     }
   });
@@ -95,8 +92,8 @@ function isGroup(chat) {
 async function sendStart(chatId, chatType, user) {
   await ensureUser(user);
   const keyboard = chatType === 'private'
-    ? { text: '🎮 Відкрити гру', web_app: { url: process.env.WEBAPP_URL } }
-    : { text: '🎮 Відкрити гру', url: process.env.WEBAPP_URL };
+    ? { text: '🎮 Відкрити гру', web_app: { url: WEBAPP_URL } }
+    : { text: '🎮 Відкрити гру', url: WEBAPP_URL };
 
   await sendMessage(
     chatId,
