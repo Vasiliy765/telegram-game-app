@@ -203,9 +203,7 @@ window.DurakRoom = (() => {
   }
 
   function roomLink() {
-    const url = new URL(window.location.href);
-    url.searchParams.set('room', state.roomCode);
-    return url.toString();
+    return window.createRoomInviteUrl(state.roomCode);
   }
 
   async function copyLink() {

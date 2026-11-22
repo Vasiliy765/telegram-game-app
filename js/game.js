@@ -17,6 +17,56 @@
   window.APP_STATE.balance = readBalance();
   window.APP_STATE.diamonds = 0;
 
+  let roomInviteResolved = false;
+  let roomInvite = null;
+
+  function resolveRoomInvite() {
+    if (roomInviteResolved) return roomInvite;
+    roomInviteResolved = true;
+
+    const params = new URLSearchParams(window.location.search);
+    const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+    let roomCode = '';
+    let preferredGame = '';
+    if (typeof startParam === 'string' && startParam.startsWith('room_')) {
+      roomCode = startParam.slice('room_'.length);
+    } else if (params.has('room')) {
+      roomCode = params.get('room') || '';
+    } else if (params.has('battleshipRoom')) {
+      roomCode = params.get('battleshipRoom') || '';
+      preferredGame = 'battleship';
+    } else if (params.has('tictactoeRoom')) {
+      roomCode = params.get('tictactoeRoom') || '';
+      preferredGame = 'tictactoe';
+    }
+
+    roomCode = roomCode.trim().toUpperCase();
+    if (!roomCode) return null;
+    const game = /^DURAK-[A-Z0-9]{6}$/.test(roomCode) ? 'durak'
+      : /^BS-[A-Z0-9]{6}$/.test(roomCode) ? 'battleship'
+        : /^TTT-[A-Z0-9]{6}$/.test(roomCode) ? 'tictactoe'
+          : preferredGame || (params.has('room') ? 'durak' : '');
+    roomInvite = game ? { game, roomCode } : null;
+    return roomInvite;
+  }
+
+  window.hasIncomingRoomInvite = function hasIncomingRoomInvite(game) {
+    return !window.APP_STATE.roomInviteHandled && resolveRoomInvite()?.game === game;
+  };
+
+  window.consumeIncomingRoomInvite = function consumeIncomingRoomInvite(game) {
+    if (!window.hasIncomingRoomInvite(game)) return null;
+    window.APP_STATE.roomInviteHandled = true;
+    return { ...resolveRoomInvite() };
+  };
+
+  window.createRoomInviteUrl = function createRoomInviteUrl(roomCode) {
+    if (typeof roomCode !== 'string' || !roomCode.trim()) {
+      throw new TypeError('A room code is required to create an invite link.');
+    }
+    return `https://t.me/SecretAgentGame646Bot?startapp=room_${encodeURIComponent(roomCode.trim())}`;
+  };
+
   function getCurrentPlayerProfile() {
     const user = window.Telegram?.WebApp?.initDataUnsafe?.user;
     const username = typeof user?.username === 'string' ? user.username.replace(/^@/, '') : '';

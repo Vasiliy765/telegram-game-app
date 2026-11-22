@@ -269,7 +269,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (event.target === inviteModal) closeInvite();
   });
 
-  const roomCode = new URLSearchParams(window.location.search).get('room');
+  const invite = window.consumeIncomingRoomInvite?.('durak');
+  const roomCode = invite?.roomCode
+    || (!window.consumeIncomingRoomInvite && new URLSearchParams(window.location.search).get('room'));
   if (roomCode && inviteModal && inviteCode) {
     inviteCode.textContent = roomCode;
     void window.DurakRoom.joinRoom(roomCode);

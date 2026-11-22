@@ -17,6 +17,8 @@ Firestore stores player profiles and balances in `players/{firebaseUid}`. Game
 rooms are stored in the `durakRooms`, `tictactoeRooms`, and `battleshipRooms`
 collections. Room IDs are shared through invitation links, and Firestore rules
 require an authenticated player to read or update a room.
+Mini App invitations use Telegram deep links in the form
+`https://t.me/SecretAgentGame646Bot?startapp=room_<ROOM_ID>`.
 
 Telegram `initDataUnsafe` fields are used for display only, not as authentication.
 Each anonymous Firebase account keeps its own balance document; balances are

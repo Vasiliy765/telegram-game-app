@@ -130,9 +130,7 @@ window.TicTacToe = (() => {
   }
 
   function roomLink() {
-    const url = new URL(location.href);
-    url.searchParams.set('tictactoeRoom', state.online.roomCode);
-    return url.toString();
+    return window.createRoomInviteUrl(state.online.roomCode);
   }
 
   function escapeHtml(value) {
@@ -682,6 +680,7 @@ window.TicTacToe = (() => {
     state.online = null;
     const url = new URL(location.href);
     url.searchParams.delete('tictactoeRoom');
+    url.searchParams.delete('room');
     history.replaceState({}, '', url);
   }
 
@@ -701,7 +700,8 @@ window.TicTacToe = (() => {
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    const roomCode = new URLSearchParams(location.search).get('tictactoeRoom');
+    const invite = window.consumeIncomingRoomInvite?.('tictactoe');
+    const roomCode = invite?.roomCode || new URLSearchParams(location.search).get('tictactoeRoom');
     if (!roomCode) return;
     if (window.showView) window.showView('tictactoe');
     void joinOnlineRoom(roomCode);

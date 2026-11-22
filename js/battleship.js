@@ -63,7 +63,8 @@ window.Battleship = (() => {
       playerStats:{shots:0,hits:0,sunk:0},enemyStats:{shots:0,hits:0,sunk:0},sound:true,online:null,
       matchId:`battleship-${Date.now()}-${Math.random().toString(36).slice(2,10)}`,wagerStarted:false};
     render();
-    const roomCode = new URLSearchParams(location.search).get('battleshipRoom');
+    const invite = window.consumeIncomingRoomInvite?.('battleship');
+    const roomCode = invite?.roomCode || new URLSearchParams(location.search).get('battleshipRoom');
     if (roomCode) void joinOnlineRoom(roomCode);
   }
 
@@ -75,6 +76,7 @@ window.Battleship = (() => {
     state.online=null;
     const url=new URL(location.href);
     url.searchParams.delete('battleshipRoom');
+    url.searchParams.delete('room');
     history.replaceState({},'',url);
     document.body.classList.remove('battleship-active');
     document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-home'));
@@ -157,9 +159,7 @@ window.Battleship = (() => {
     return {telegramId:profile.telegramId,username:profile.username,photoUrl:profile.photoUrl};
   }
   function roomLink(){
-    const url=new URL(location.href);
-    url.searchParams.set('battleshipRoom',state.online.roomCode);
-    return url.toString();
+    return window.createRoomInviteUrl(state.online.roomCode);
   }
   function notify(message){
     if(window.TWA?.toast)window.TWA.toast(message);
