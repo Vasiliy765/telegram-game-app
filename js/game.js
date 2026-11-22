@@ -203,7 +203,7 @@
       setLeaderboardMessage('Рейтинг за балансом потребує налаштованого Firebase.');
       return;
     }
-    if (!window.firebase?.firestore || !window.firebase?.auth) {
+    if (!window.firebase?.firestore) {
       throw new Error('Firebase SDK для рейтингу не завантажився.');
     }
 
@@ -214,10 +214,22 @@
     }
 
     if (!window.firebase.apps.length) window.firebase.initializeApp(window.FIREBASE_CONFIG);
-    await getFirebaseUser();
     const firestore = window.firebase.firestore();
     const userId = String(telegramUser.id);
     const userDocumentRef = firestore.collection('users').doc(userId);
+    userDocumentRef.onSnapshot((snapshot) => {
+      if (!snapshot.exists) return;
+      const savedBalance = snapshot.get('balance');
+      if (!Number.isSafeInteger(savedBalance) || savedBalance < 0) {
+        console.error(`Invalid balance in Firestore user document ${userId}.`);
+        return;
+      }
+      applyRemoteBalance(savedBalance, 'firestore');
+    }, (error) => {
+      console.error('Unable to listen for Firestore user balance changes.', error);
+      setLeaderboardMessage('Не вдалося підключити синхронізацію балансу.');
+    });
+
     await firestore.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(userDocumentRef);
       if (!snapshot.exists) {
@@ -231,18 +243,6 @@
       }
     });
     playerDocumentRef = userDocumentRef;
-
-    playerDocumentRef.onSnapshot((snapshot) => {
-      const savedBalance = snapshot.get('balance');
-      if (!snapshot.exists || !Number.isSafeInteger(savedBalance) || savedBalance < 0) {
-        console.error(`Invalid balance in Firestore user document ${userId}.`);
-        return;
-      }
-      applyRemoteBalance(savedBalance, 'firestore');
-    }, (error) => {
-      console.error('Unable to listen for Firestore user balance changes.', error);
-      setLeaderboardMessage('Не вдалося підключити синхронізацію балансу.');
-    });
 
     if (pendingBalanceDelta !== 0) {
       const delta = pendingBalanceDelta;
