@@ -8,8 +8,9 @@ const { Bot } = require('node-telegram-bot-api');
 const { run } = require('node-telegram-bot-api/node');
 const admin = require('firebase-admin');
 
-if (!process.env.BOT_TOKEN) {
-  throw new Error('BOT_TOKEN is required. Set it in .env before starting the bot.');
+const BOT_TOKEN = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || process.env.TOKEN;
+if (!BOT_TOKEN) {
+  throw new Error('A bot token is required. Set BOT_TOKEN, TELEGRAM_BOT_TOKEN, or TOKEN before starting the bot.');
 }
 
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT !== undefined
@@ -24,7 +25,7 @@ const db = admin.firestore();
 const users = db.collection('users');
 const challenges = db.collection('challenges');
 const diamondPurchases = db.collection('diamondPurchases');
-const bot = new Bot(process.env.BOT_TOKEN);
+const bot = new Bot(BOT_TOKEN);
 const updateContext = new AsyncLocalStorage();
 const WEBAPP_URL = 'https://vasiliy765.github.io/telegram-game-app/';
 const WEBAPP_ORIGIN = new URL(WEBAPP_URL).origin;
@@ -398,7 +399,7 @@ function validateTelegramInitData(initData) {
     .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .map(([key, value]) => `${key}=${value}`)
     .join('\n');
-  const secretKey = crypto.createHmac('sha256', process.env.BOT_TOKEN)
+  const secretKey = crypto.createHmac('sha256', BOT_TOKEN)
     .update('WebAppData')
     .digest();
   const expectedHash = crypto.createHmac('sha256', secretKey)
