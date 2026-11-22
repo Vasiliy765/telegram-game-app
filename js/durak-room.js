@@ -169,13 +169,19 @@ window.DurakRoom = (() => {
     const addButton = $('durak-room-add-test');
     const inviteButton = $('durak-room-invite');
     const copyButton = $('durak-room-copy');
-    const role = window.getRoomRole?.(
-      { id: state.myId },
-      { meta: state.roomMeta, seats: state.slots },
-    );
-    const isHost = state.isOnline && role ? role.isHost : state.isHost;
-    const isJoined = role?.isJoined ?? state.slots.some((slot) => slot.joined &&
-      String(slot.id) === String(state.myId));
+    const telegramUser = tg.initDataUnsafe?.user;
+    const currentUserId = telegramUser?.id == null ? state.myId : telegramUser.id;
+    const hostSeat = state.slots.find((slot) =>
+      String(slot.id) === String(state.roomMeta?.hostId));
+    const creatorId = state.roomMeta?.creatorId ??
+      (telegramUser?.id == null ? state.roomMeta?.hostId : hostSeat?.telegramId);
+    const isHost = state.isOnline && state.roomMeta
+      ? creatorId != null && String(currentUserId) === String(creatorId)
+      : state.isHost;
+    const isJoined = state.slots.some((slot) => slot.joined &&
+      (telegramUser?.id == null
+        ? String(slot.id) === String(state.myId)
+        : String(slot.telegramId) === String(telegramUser.id)));
     const isJoinPending = state.isOnline && !isHost && !isJoined;
     const ownSeat = state.slots.find((slot) => String(slot.id) === String(state.myId));
     state.isHost = isHost;
@@ -194,7 +200,7 @@ window.DurakRoom = (() => {
       const emptySeat = state.slots.some((slot) => !slot.joined && !slot.isHost);
       joinButton.hidden = !isJoinPending;
       joinButton.disabled = state.roomStarted || !emptySeat;
-      joinButton.textContent = `Приєднатися до гри (ставка: ${state.settings.stake} 🪙)`;
+      joinButton.textContent = `Приєднатися до столу (ставка: ${state.settings.stake} 🪙)`;
     }
     if (addButton) {
       const hasEmptySlot = state.slots.some((slot) => !slot.joined && !slot.isHost);
@@ -232,10 +238,14 @@ window.DurakRoom = (() => {
     const stake = $('durak-room-stake');
     if (stake) stake.textContent = `🪙 ${state.settings.stake}`;
     const bank = $('durak-room-bank-value');
-    if (bank) bank.textContent = state.settings.stake * state.slots.filter((slot) => slot.joined).length;
+    const roomBank = Number(state.roomMeta?.bank);
+    if (bank) bank.textContent = Number.isFinite(roomBank)
+      ? roomBank
+      : state.settings.stake * state.slots.filter((slot) => slot.joined).length;
     const type = $('durak-room-badge-type');
     if (type) type.textContent = state.settings.roomType === 'Відкрита' ? '🌐 Відкрита' : '🔒 Закрита';
 
+    renderControls();
     const status = $('durak-room-status');
     if (status) {
       const joined = state.slots.filter((slot) => slot.joined);
@@ -253,7 +263,6 @@ window.DurakRoom = (() => {
             : `Очікуємо готовності · готові ${readyCount}/${joined.length}`;
     }
     renderSlots();
-    renderControls();
   }
 
   function roomLink() {
@@ -609,8 +618,10 @@ window.DurakRoom = (() => {
         isBot: false,
         joined: true,
       };
+      const creatorId = hostSeat.telegramId || state.myId;
       await roomReference('meta').set({
         hostId: state.myId,
+        creatorId,
         hostName: playerName(),
         members: { [state.myId]: true },
         settings: state.settings,
@@ -841,7 +852,12 @@ window.DurakRoom = (() => {
     const copyButton = $('durak-room-copy');
     const exitButton = $('durak-room-exit');
 
-    if (startButton) startButton.onclick = state.isHost ? startGame : toggleReady;
+    if (startButton) {
+      startButton.onclick = () => {
+        if (state.isHost) void startGame();
+        else void toggleReady();
+      };
+    }
     if (joinButton) joinButton.onclick = () => { void acceptRoomInvite(); };
     if (addButton) addButton.onclick = addTestPlayer;
     if (inviteButton) inviteButton.onclick = openInvite;

@@ -199,7 +199,8 @@ window.Battleship = (() => {
       localTest:!backend,unsubscribe:null,roomData:null};
     state.mode='online';
     const host={id:state.online.uid,name:playerName(),...playerProfileFields(),avatar:(playerName()[0]||'Г').toUpperCase(),ready:true,fleet:serializeFleet(randomFleet().ships)};
-    const room={meta:{stake:state.stake,bank:state.stake,status:'waiting',hostId:String(host.id),hostName:host.name,isPublic:true,createdAt:Date.now(),version:1,round:1},
+    const room={meta:{stake:state.stake,bank:state.stake,status:'waiting',hostId:String(host.id),
+      creatorId:String(host.telegramId||host.id),hostName:host.name,isPublic:true,createdAt:Date.now(),version:1,round:1},
       players:{[host.id]:host},turn:host.id,shots:{}};
     state.online.roomData=room;
     if(backend){
@@ -275,11 +276,13 @@ window.Battleship = (() => {
     const hostPlayer=players.find(player=>String(player.id)===String(room.meta?.hostId));
     const guestPlayer=players.find(player=>String(player.id)!==String(room.meta?.hostId));
     const inviteUrl=roomLink();
-    const role=window.getRoomRole?.({id:state.online.uid},room)||{
-      isHost:String(state.online.uid)===String(room.meta?.hostId),
-      isJoined:Boolean(mine),
-    };
-    const {isHost,isJoined}=role;
+    const telegramUser=window.Telegram?.WebApp?.initDataUnsafe?.user;
+    const currentUserId=telegramUser?.id==null?state.online.uid:telegramUser.id;
+    const creatorId=room.meta?.creatorId??(telegramUser?.id==null?room.meta?.hostId:hostPlayer?.telegramId);
+    const isHost=creatorId!=null&&String(currentUserId)===String(creatorId);
+    const isJoined=players.some(player=>telegramUser?.id==null
+      ?String(player.id)===String(state.online.uid)
+      :String(player.telegramId)===String(telegramUser.id));
     const isJoinPending=!isHost&&!isJoined;
     const joinAvailable=players.length<2&&room.meta?.status==='waiting';
     const canStart=isHost&&canStartBattle(room);

@@ -177,6 +177,7 @@ window.TicTacToe = (() => {
         bank: state.stake,
         status: 'waiting',
         hostId: String(uid),
+        creatorId: String(profile.telegramId || uid),
         hostName: profile.name,
         isPublic: true,
         createdAt: Date.now(),
@@ -268,12 +269,14 @@ window.TicTacToe = (() => {
     const hostPlayer = players.find((player) => String(player.id) === String(room.meta?.hostId));
     const guestPlayer = players.find((player) => String(player.id) !== String(room.meta?.hostId));
     const link = roomLink();
-    const role = window.getRoomRole?.({ id: state.online.uid }, room)
-      || {
-        isHost: String(state.online.uid) === String(room.meta?.hostId),
-        isJoined: Boolean(mine),
-      };
-    const { isHost, isJoined } = role;
+    const telegramUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+    const currentUserId = telegramUser?.id == null ? state.online.uid : telegramUser.id;
+    const creatorId = room.meta?.creatorId ??
+      (telegramUser?.id == null ? room.meta?.hostId : hostPlayer?.telegramId);
+    const isHost = creatorId != null && String(currentUserId) === String(creatorId);
+    const isJoined = players.some((player) => telegramUser?.id == null
+      ? String(player.id) === String(state.online.uid)
+      : String(player.telegramId) === String(telegramUser.id));
     const isJoinPending = !isHost && !isJoined;
     const joinAvailable = players.length < 2 && room.meta?.status === 'waiting';
     const canStart = isHost && canStartOnlineRoom(room);
