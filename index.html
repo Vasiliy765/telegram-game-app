@@ -86,8 +86,38 @@
       <section id="view-store" class="view">
         <div class="game-header"><button class="back-btn" data-view="home">← Назад</button><h2>Монети</h2></div>
         <div class="store" id="store-game">
-          <div class="balance-card"><div class="balance-row"><span>Ваш баланс</span><span class="big" id="store-balance">0</span> <span class="star">🪙</span></div><div class="balance-hint">Зберігається у браузері.</div></div>
-          <div class="store-section"><h3 class="section-title">Поповнення через Telegram Stars</h3><div class="stars-row" id="store-stars"></div></div>
+          <div class="balance-card">
+            <div class="balance-row"><span>Баланс монет</span><strong><span class="big" id="store-balance">0</span> <span class="star">🪙</span></strong></div>
+            <div class="balance-row"><span>Баланс діамантів</span><strong>💎 <span id="store-diamonds">0</span></strong></div>
+            <div class="balance-hint">Синхронізовано з профілем ☁️</div>
+          </div>
+          <div class="store-section">
+            <h3 class="section-title">Поповнення через Telegram Stars</h3>
+            <div class="stars-row" id="store-stars"></div>
+            <div class="diamonds-shop-packages" data-diamonds-shop>
+              <button class="diamond-package" type="button" data-diamond-package="10">
+                <span class="diamond-package-amount">10 💎</span>
+                <span class="diamond-package-price">15 ⭐️</span>
+              </button>
+              <button class="diamond-package" type="button" data-diamond-package="50">
+                <span class="diamond-package-badge">Вигода 13%</span>
+                <span class="diamond-package-amount">50 💎</span>
+                <span class="diamond-package-price">65 ⭐️</span>
+              </button>
+              <button class="diamond-package" type="button" data-diamond-package="100">
+                <span class="diamond-package-badge">Вигода 23%</span>
+                <span class="diamond-package-amount">100 💎</span>
+                <span class="diamond-package-price">115 ⭐️</span>
+              </button>
+              <button class="diamond-package diamond-package-best" type="button" data-diamond-package="300">
+                <span class="diamond-package-badge">🔥 НАЙВИГІДНІШЕ • Економія 40%</span>
+                <span class="diamond-package-amount">300 💎</span>
+                <span class="diamond-package-price">270 ⭐️</span>
+                <span class="diamond-package-note">Лише 0.9 ⭐️ за 1 💎</span>
+              </button>
+              <p class="diamonds-shop-status" data-diamonds-shop-status role="status" aria-live="polite"></p>
+            </div>
+          </div>
           <div class="store-section"><h3 class="section-title">Скіни для карт (Дурак)</h3><div class="skins" id="store-skins"></div><div class="store-note">Обраний скін застосовується до рубашки карт у грі Дурак.</div></div>
         </div>
       </section>
@@ -359,7 +389,7 @@
       </section>
     </main>
     <div class="diamonds-shop-overlay" id="diamonds-shop-modal" aria-hidden="true">
-      <section class="diamonds-shop-dialog" role="dialog" aria-modal="true" aria-labelledby="diamonds-shop-title">
+      <section class="diamonds-shop-dialog" role="dialog" aria-modal="true" aria-labelledby="diamonds-shop-title" data-diamonds-shop>
         <header class="diamonds-shop-header">
           <div>
             <p class="diamonds-shop-eyebrow">TELEGRAM STARS</p>
@@ -390,7 +420,7 @@
             <span class="diamond-package-note">Лише 0.9 ⭐️ за 1 💎</span>
           </button>
         </div>
-        <p class="diamonds-shop-status" id="diamonds-shop-status" role="status" aria-live="polite"></p>
+        <p class="diamonds-shop-status" id="diamonds-shop-status" data-diamonds-shop-status role="status" aria-live="polite"></p>
       </section>
     </div>
     <div class="modal-overlay" id="room-invite-modal" aria-hidden="true">
@@ -407,19 +437,19 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=19"></script>
-    <script src="js/firestore-room-store.js?v=19"></script>
-    <script src="js/twa.js?v=19"></script>
-    <script src="js/game.js?v=19"></script>
-    <script src="js/router.js?v=19"></script>
-    <script src="js/cards.js?v=19"></script>
-    <script src="js/durak.js?v=19"></script>
-    <script src="js/battleship.js?v=19"></script>
-    <script src="js/tictactoe.js?v=19"></script>
-    <script src="js/store.js?v=19"></script>
-    <script src="js/durak-room.js?v=19"></script>
-    <script src="js/durak-multiplayer.js?v=19"></script>
-    <script src="js/main.js?v=19"></script>
+    <script src="js/firebase-config.js?v=20"></script>
+    <script src="js/firestore-room-store.js?v=20"></script>
+    <script src="js/twa.js?v=20"></script>
+    <script src="js/game.js?v=20"></script>
+    <script src="js/router.js?v=20"></script>
+    <script src="js/cards.js?v=20"></script>
+    <script src="js/durak.js?v=20"></script>
+    <script src="js/battleship.js?v=20"></script>
+    <script src="js/tictactoe.js?v=20"></script>
+    <script src="js/store.js?v=20"></script>
+    <script src="js/durak-room.js?v=20"></script>
+    <script src="js/durak-multiplayer.js?v=20"></script>
+    <script src="js/main.js?v=20"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (window.hasIncomingRoomInvite?.('battleship')) {
@@ -428,7 +458,7 @@
     });
   </script>
   </div>
-<script src="js/reactions-sync.js?v=19"></script>
-<script src="js/admin-panel.js?v=19"></script>
+<script src="js/reactions-sync.js?v=20"></script>
+<script src="js/admin-panel.js?v=20"></script>
 </body>
 </html>

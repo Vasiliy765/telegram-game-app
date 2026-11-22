@@ -115,7 +115,7 @@ window.DurakRoom = (() => {
   }
 
   function roomDocumentReference() {
-    return window.firebase.firestore().collection('durakRooms').doc(state.roomCode);
+    return window.FirebaseRoomStore.ref(`rooms/${state.roomCode}`).documentReference();
   }
 
   function actionFieldPath(playerId, actionId) {
@@ -476,12 +476,18 @@ window.DurakRoom = (() => {
   }
 
   async function sendReaction(emoji) {
+    const myTgId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
     if (!state.isOnline || !state.roomCode || typeof emoji !== 'string') return;
+    if (myTgId == null) {
+      console.error('Unable to share a Durak reaction without a Telegram user ID.');
+      notify('Не вдалося визначити ваш Telegram ID для реакції.');
+      return;
+    }
     try {
       await roomDocumentReference().update({
         lastReaction: {
           emoji,
-          senderId: String(tg.initDataUnsafe?.user?.id ?? state.myId),
+          senderId: String(myTgId),
           nonce: Math.random(),
           ts: Date.now(),
         },

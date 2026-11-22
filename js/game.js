@@ -489,7 +489,7 @@
       if (element) element.textContent = balance;
     });
     const diamonds = formatCurrency(window.APP_STATE.diamonds);
-    ['header-diamonds', 'profile-diamonds'].forEach((id) => {
+    ['header-diamonds', 'profile-diamonds', 'store-diamonds'].forEach((id) => {
       const element = document.getElementById(id);
       if (element) element.textContent = diamonds;
     });
@@ -514,7 +514,7 @@
 
   function bindDiamondsShop() {
     const modal = document.getElementById('diamonds-shop-modal');
-    const status = document.getElementById('diamonds-shop-status');
+    const status = modal?.querySelector('[data-diamonds-shop-status]');
     if (!modal || !status) return;
 
     function closeShop() {
@@ -530,23 +530,26 @@
         modal.querySelector('[data-close-diamonds-shop]')?.focus();
       });
     });
+    document.querySelectorAll('[data-diamond-package]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const container = button.closest('[data-diamonds-shop]');
+        const packageStatus = container?.querySelector('[data-diamonds-shop-status]');
+        if (!container || !packageStatus || button.disabled) return;
+        void purchaseDiamonds(button.dataset.diamondPackage, packageStatus);
+      });
+    });
     modal.addEventListener('click', (event) => {
       if (event.target === modal || event.target.closest('[data-close-diamonds-shop]')) {
         closeShop();
-        return;
       }
-
-      const button = event.target.closest('[data-diamond-package]');
-      if (!button || button.disabled) return;
-      void purchaseDiamonds(button.dataset.diamondPackage, modal, status);
     });
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && modal.classList.contains('open')) closeShop();
     });
   }
 
-  async function purchaseDiamonds(packageId, modal, status) {
-    const buttons = [...modal.querySelectorAll('[data-diamond-package]')];
+  async function purchaseDiamonds(packageId, status) {
+    const buttons = [...document.querySelectorAll('[data-diamond-package]')];
     const telegramUser = telegramWebApp?.initDataUnsafe?.user;
     const initData = telegramWebApp?.initData;
     if (!telegramUser?.id || !initData) {

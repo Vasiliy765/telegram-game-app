@@ -16,13 +16,14 @@
       lastReactionKey = '';
       return;
     }
-    if (roomId === watchedRoomId || !window.firebase?.firestore) return;
+    if (roomId === watchedRoomId || !window.FirebaseRoomStore) return;
     watchedRoomId = roomId;
     lastReactionKey = '';
     if (unsubscribe) unsubscribe();
 
-    const db = window.firebase.firestore();
-    unsubscribe = db.collection('durakRooms').doc(roomId).onSnapshot((doc) => {
+    const myTgId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    const roomReference = window.FirebaseRoomStore.ref(`rooms/${roomId}`).documentReference();
+    unsubscribe = roomReference.onSnapshot((doc) => {
       if (!doc.exists) return;
       const reaction = doc.get('lastReaction');
       const ts = Number(reaction?.ts);
@@ -31,6 +32,7 @@
       const reactionKey = `${String(reaction.nonce)}:${ts}`;
       if (reactionKey === lastReactionKey) return;
       lastReactionKey = reactionKey;
+      if (myTgId == null || String(reaction.senderId) === String(myTgId)) return;
       if (Date.now() - ts > 6000) return;
       window.DurakMultiplayer?.showReaction(String(reaction.senderId), reaction.emoji);
     }, (error) => {
