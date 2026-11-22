@@ -1,4 +1,4 @@
-@import url("css/style.css?v=34");
+@import url("css/style.css?v=35");
 
 html,
 body {
@@ -1141,9 +1141,159 @@ body.tictactoe-active #view-tictactoe.active {
   font-weight: 800;
 }
 
+.rp-page {
+  display: grid;
+  gap: 16px;
+  padding: 0 16px 24px;
+}
+
+.rp-guide,
+.rp-mini-games {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, #202125, #191a1d);
+}
+
+.rp-guide {
+  display: grid;
+  gap: 18px;
+  padding: 16px;
+}
+
+.rp-guide-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rp-guide-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(245, 212, 119, 0.3);
+  border-radius: 14px;
+  background: rgba(245, 212, 119, 0.1);
+  font-size: 23px;
+}
+
+.rp-guide-heading h3,
+.rp-guide-heading p,
+.rp-category h4,
+.rp-mini-games > h3 {
+  margin: 0;
+}
+
+.rp-guide-heading h3,
+.rp-mini-games > h3 {
+  color: #fff;
+  font-size: 16px;
+}
+
+.rp-guide-heading p {
+  margin-top: 4px;
+  color: #aaaab2;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.rp-category {
+  display: grid;
+  gap: 10px;
+}
+
+.rp-category h4 {
+  color: #f5d477;
+  font-size: 13px;
+}
+
+.rp-command-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  gap: 8px;
+}
+
+.rp-command {
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #383840;
+  border-radius: 12px;
+  background: #17171b;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.rp-command:hover,
+.rp-command:focus-visible {
+  border-color: rgba(245, 212, 119, 0.65);
+  background: #222126;
+}
+
+.rp-command-emoji {
+  flex: 0 0 auto;
+  font-size: 21px;
+}
+
+.rp-command-text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.rp-command-text code {
+  overflow-wrap: anywhere;
+  color: #f3f0e9;
+  font: 700 12px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.rp-command-text small {
+  color: #9797a0;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.rp-copy-label {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: #f5d477;
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.rp-mini-games {
+  overflow: hidden;
+  padding-top: 16px;
+}
+
+.rp-mini-games > h3 {
+  padding: 0 16px;
+}
+
 @media (max-width: 380px) {
   .chat-game-command-row {
     grid-template-columns: 1fr;
+  }
+
+  .rp-guide {
+    padding: 13px;
+  }
+
+  .rp-command {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .rp-copy-label {
+    font-size: 9px;
   }
 }
 

@@ -1239,6 +1239,22 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!copied) throw new Error('Clipboard copy was not available.');
   }
 
+  const rpGuide = document.getElementById('rp-commands');
+  rpGuide?.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-copy-rp-command]');
+    if (!button) return;
+
+    try {
+      await copyCommand(button.dataset.copyRpCommand);
+      if (window.TWA?.toast) window.TWA.toast('РП-команду скопійовано');
+      else window.alert('РП-команду скопійовано');
+    } catch (error) {
+      console.error('Could not copy the RP command.', error);
+      if (window.TWA?.toast) window.TWA.toast('Не вдалося скопіювати РП-команду');
+      else window.alert('Не вдалося скопіювати РП-команду');
+    }
+  });
+
   catalog.querySelectorAll('[data-chat-game-stake]').forEach(updateCommandPreview);
   catalog.addEventListener('input', (event) => {
     const input = event.target.closest('[data-chat-game-stake]');

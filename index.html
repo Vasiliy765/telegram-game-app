@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#0f172a">
   <title>Ігровий центр · Telegram Mini App</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=34">
+  <link rel="stylesheet" href="style.css?v=35">
 </head>
 <body>
   <div id="app">
@@ -29,7 +29,7 @@
       <button class="nav-item active" data-view="home" aria-label="Ігри"><span class="nav-icon">🎮</span><span class="nav-label">Ігри</span></button>
       <button class="nav-item" data-view="store" aria-label="Монети"><span class="nav-icon">🪙</span><span class="nav-label">Монети</span></button>
       <button class="nav-item" data-view="top" aria-label="Топ гравців"><span class="nav-icon">🏆</span><span class="nav-label">Топ</span></button>
-      <button class="nav-item" data-view="commands" aria-label="РП / Міні-ігри"><span class="nav-icon">🎲</span><span class="nav-label">Міні-ігри</span></button>
+      <button class="nav-item" data-view="commands" aria-label="РП-дії"><span class="nav-icon">🎭</span><span class="nav-label">РП-дії</span></button>
       <button class="nav-item" data-view="profile" aria-label="Профіль"><span class="nav-icon">👤</span><span class="nav-label">Профіль</span></button>
     </nav>
     <main class="views" id="views">
@@ -376,34 +376,78 @@
         </div>
       </section>
 
-      <!-- Каталог чат-ігор -->
+      <!-- РП-дії та швидкі чат-ігри -->
       <section id="view-commands" class="view">
-        <div class="game-header"><button class="back-btn" data-view="home">← Назад</button><h2>РП / Міні-ігри</h2></div>
-        <div class="chat-games-catalog" id="chat-games-catalog">
-          <article class="chat-game-card">
-            <header class="chat-game-heading"><span class="chat-game-icon">🪙</span><div><h3>Монетка</h3><p>Орел чи решка · ставка 10–300 🪙</p></div></header>
-            <p class="chat-game-rule">Команда для чату</p>
-            <code class="chat-game-example" data-command-preview="coin">Зіграти в монетку 100</code>
-            <label class="chat-game-stake-label" for="coin-chat-stake">Сума ставки</label>
-            <div class="chat-game-command-row">
-              <input id="coin-chat-stake" class="chat-game-stake" type="number" min="10" max="300" step="1" value="100" inputmode="numeric" data-chat-game-stake="coin" aria-label="Ставка для команди монетки">
-              <button class="chat-game-copy" type="button" data-copy-chat-command="coin">Копіювати команду</button>
+        <div class="game-header"><button class="back-btn" data-view="home">← Назад</button><h2>🎭 РП-дії</h2></div>
+        <div class="rp-page">
+          <section class="rp-guide" id="rp-commands">
+            <header class="rp-guide-heading">
+              <span class="rp-guide-icon">🎭</span>
+              <div><h3>РП-команди в чаті</h3><p>Відповідай (Reply) на повідомлення друга в чаті та пиши команду.</p></div>
+            </header>
+            <div class="rp-category">
+              <h4>🤗 Дружні та веселі</h4>
+              <div class="rp-command-grid">
+                <button class="rp-command" type="button" data-copy-rp-command="дякую"><span class="rp-command-emoji">🙏✨</span><span class="rp-command-text"><code>дякую</code><small>Також: подякувати, спасибі</small></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="обійняти"><span class="rp-command-emoji">🤗</span><span class="rp-command-text"><code>обійняти</code></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="потиснути руку"><span class="rp-command-emoji">🤝</span><span class="rp-command-text"><code>потиснути руку</code><small>Або: пожати руку</small></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="дай п'ять"><span class="rp-command-emoji">✋</span><span class="rp-command-text"><code>дай п'ять</code><small>Або: дати п'ять</small></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="кава"><span class="rp-command-emoji">☕</span><span class="rp-command-text"><code>кава</code><small>Або: пригостити кавою</small></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="погладити"><span class="rp-command-emoji">🥰</span><span class="rp-command-text"><code>погладити</code></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="похвалити"><span class="rp-command-emoji">🌟</span><span class="rp-command-text"><code>похвалити</code></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="підморгнути"><span class="rp-command-emoji">😉</span><span class="rp-command-text"><code>підморгнути</code></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="поцілувати"><span class="rp-command-emoji">😘</span><span class="rp-command-text"><code>поцілувати</code></span><span class="rp-copy-label">Копіювати</span></button>
+              </div>
             </div>
-            <p class="chat-game-rule">Правила</p>
-            <p class="chat-game-description">Якщо відповіси на повідомлення гравця, прийняти або відхилити виклик зможе тільки він. Якщо напишеш команду просто в чат, прийняти її зможе будь-хто. Бот визначить переможця та зарахує виграш; комісія банку — 2%.</p>
-          </article>
-          <article class="chat-game-card">
-            <header class="chat-game-heading"><span class="chat-game-icon">🎲</span><div><h3>Кубик</h3><p>Дуель на двох кубиках · ставка 10–300 🪙</p></div></header>
-            <p class="chat-game-rule">Команда для чату</p>
-            <code class="chat-game-example" data-command-preview="dice">Зіграти в кубика 100</code>
-            <label class="chat-game-stake-label" for="dice-chat-stake">Сума ставки</label>
-            <div class="chat-game-command-row">
-              <input id="dice-chat-stake" class="chat-game-stake" type="number" min="10" max="300" step="1" value="100" inputmode="numeric" data-chat-game-stake="dice" aria-label="Ставка для команди кубика">
-              <button class="chat-game-copy" type="button" data-copy-chat-command="dice">Копіювати команду</button>
+            <div class="rp-category">
+              <h4>🩴 Жартівливі та хуліганські</h4>
+              <div class="rp-command-grid">
+                <button class="rp-command" type="button" data-copy-rp-command="вдарити"><span class="rp-command-emoji">👊</span><span class="rp-command-text"><code>вдарити</code><small>Або: врізати</small></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="кусь"><span class="rp-command-emoji">🧛‍♂️</span><span class="rp-command-text"><code>кусь</code><small>Або: вкусити</small></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="тапок"><span class="rp-command-emoji">🩴</span><span class="rp-command-text"><code>тапок</code><small>Або: кинути тапком</small></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="облити"><span class="rp-command-emoji">💦</span><span class="rp-command-text"><code>облити</code><small>Або: облити водою</small></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="зв'язати"><span class="rp-command-emoji">🪢</span><span class="rp-command-text"><code>зв'язати</code></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="в бункер"><span class="rp-command-emoji">🚪🔒</span><span class="rp-command-text"><code>в бункер</code><small>Або: відправити в бункер</small></span><span class="rp-copy-label">Копіювати</span></button>
+              </div>
             </div>
-            <p class="chat-game-rule">Правила</p>
-            <p class="chat-game-description">Після прийняття виклику бот кидає два кубики по черзі: перший — за того, хто запросив, другий — за того, хто прийняв. Бот оголошує переможця; комісія банку — 2%.</p>
-          </article>
+            <div class="rp-category">
+              <h4>💎 VIP та подарунки</h4>
+              <div class="rp-command-grid">
+                <button class="rp-command" type="button" data-copy-rp-command="прослухати"><span class="rp-command-emoji">🎧🕵️‍♂️</span><span class="rp-command-text"><code>прослухати</code><small>Або: жучок</small></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="пограбувати"><span class="rp-command-emoji">🥷💰</span><span class="rp-command-text"><code>пограбувати</code><small>VIP або 25 🪙 · штраф 15 🪙 при провалі · кулдаун 2 год</small></span><span class="rp-copy-label">Копіювати</span></button>
+                <button class="rp-command" type="button" data-copy-rp-command="подарити 5 діамантів"><span class="rp-command-emoji">💎✨</span><span class="rp-command-text"><code>подарити 5 діамантів</code><small>Або: подарувати 5 діамантів</small></span><span class="rp-copy-label">Копіювати</span></button>
+              </div>
+            </div>
+          </section>
+          <section class="rp-mini-games">
+            <h3>🎲 Швидкі міні-ігри</h3>
+            <div class="chat-games-catalog" id="chat-games-catalog">
+              <article class="chat-game-card">
+                <header class="chat-game-heading"><span class="chat-game-icon">🪙</span><div><h3>Монетка</h3><p>Орел чи решка · ставка 10–300 🪙</p></div></header>
+                <p class="chat-game-rule">Команда для чату</p>
+                <code class="chat-game-example" data-command-preview="coin">Зіграти в монетку 100</code>
+                <label class="chat-game-stake-label" for="coin-chat-stake">Сума ставки</label>
+                <div class="chat-game-command-row">
+                  <input id="coin-chat-stake" class="chat-game-stake" type="number" min="10" max="300" step="1" value="100" inputmode="numeric" data-chat-game-stake="coin" aria-label="Ставка для команди монетки">
+                  <button class="chat-game-copy" type="button" data-copy-chat-command="coin">Копіювати команду</button>
+                </div>
+                <p class="chat-game-rule">Правила</p>
+                <p class="chat-game-description">Якщо відповіси на повідомлення гравця, прийняти або відхилити виклик зможе тільки він. Якщо напишеш команду просто в чат, прийняти її зможе будь-хто. Бот визначить переможця та зарахує виграш; комісія банку — 2%.</p>
+              </article>
+              <article class="chat-game-card">
+                <header class="chat-game-heading"><span class="chat-game-icon">🎲</span><div><h3>Кубик</h3><p>Дуель на двох кубиках · ставка 10–300 🪙</p></div></header>
+                <p class="chat-game-rule">Команда для чату</p>
+                <code class="chat-game-example" data-command-preview="dice">Зіграти в кубика 100</code>
+                <label class="chat-game-stake-label" for="dice-chat-stake">Сума ставки</label>
+                <div class="chat-game-command-row">
+                  <input id="dice-chat-stake" class="chat-game-stake" type="number" min="10" max="300" step="1" value="100" inputmode="numeric" data-chat-game-stake="dice" aria-label="Ставка для команди кубика">
+                  <button class="chat-game-copy" type="button" data-copy-chat-command="dice">Копіювати команду</button>
+                </div>
+                <p class="chat-game-rule">Правила</p>
+                <p class="chat-game-description">Після прийняття виклику бот кидає два кубики по черзі: перший — за того, хто запросив, другий — за того, хто прийняв. Бот оголошує переможця; комісія банку — 2%.</p>
+              </article>
+            </div>
+          </section>
         </div>
       </section>
       <section id="view-profile" class="view">
@@ -490,19 +534,19 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=34"></script>
-    <script src="js/firestore-room-store.js?v=34"></script>
-    <script src="js/twa.js?v=34"></script>
-    <script src="js/game.js?v=34"></script>
-    <script src="js/router.js?v=34"></script>
-    <script src="js/cards.js?v=34"></script>
-    <script src="js/durak.js?v=34"></script>
-    <script src="js/battleship.js?v=34"></script>
-    <script src="js/tictactoe.js?v=34"></script>
-    <script src="js/store.js?v=34"></script>
-    <script src="js/durak-room.js?v=34"></script>
-    <script src="js/durak-multiplayer.js?v=34"></script>
-    <script src="js/main.js?v=34"></script>
+    <script src="js/firebase-config.js?v=35"></script>
+    <script src="js/firestore-room-store.js?v=35"></script>
+    <script src="js/twa.js?v=35"></script>
+    <script src="js/game.js?v=35"></script>
+    <script src="js/router.js?v=35"></script>
+    <script src="js/cards.js?v=35"></script>
+    <script src="js/durak.js?v=35"></script>
+    <script src="js/battleship.js?v=35"></script>
+    <script src="js/tictactoe.js?v=35"></script>
+    <script src="js/store.js?v=35"></script>
+    <script src="js/durak-room.js?v=35"></script>
+    <script src="js/durak-multiplayer.js?v=35"></script>
+    <script src="js/main.js?v=35"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (window.hasIncomingRoomInvite?.('battleship')) {
@@ -514,7 +558,7 @@
   <div class="account-ban-screen" id="account-ban-screen" hidden role="alert" aria-live="assertive">
     <div class="account-ban-card">⛔ Ваш акаунт заблоковано адміністратором</div>
   </div>
-<script src="js/reactions-sync.js?v=34"></script>
-<script src="js/admin-panel.js?v=34"></script>
+<script src="js/reactions-sync.js?v=35"></script>
+<script src="js/admin-panel.js?v=35"></script>
 </body>
 </html>

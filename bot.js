@@ -165,6 +165,225 @@ function isGroup(chat) {
   return chat.type === 'group' || chat.type === 'supergroup';
 }
 
+const RP_ACTIONS = new Map([
+  ['дякую', (from, to) => `🙏✨ Агент <b>${from}</b> щиро подякував(ла) <b>${to}</b>!`],
+  ['подякувати', (from, to) => `🙏✨ Агент <b>${from}</b> щиро подякував(ла) <b>${to}</b>!`],
+  ['спасибі', (from, to) => `🙏✨ Агент <b>${from}</b> щиро подякував(ла) <b>${to}</b>!`],
+  ['обійняти', (from, to) => `🤗 Агент <b>${from}</b> міцно обійняв(ла) <b>${to}</b>!`],
+  ['потиснути руку', (from, to) => `🤝 <b>${from}</b> по-дружньому потиснув(ла) руку <b>${to}</b>!`],
+  ['пожати руку', (from, to) => `🤝 <b>${from}</b> по-дружньому потиснув(ла) руку <b>${to}</b>!`],
+  ['дати п’ять', (from, to) => `✋ <b>${from}</b> дав(ла) п’ять <b>${to}</b>!`],
+  ["дати п'ять", (from, to) => `✋ <b>${from}</b> дав(ла) п’ять <b>${to}</b>!`],
+  ['дай п’ять', (from, to) => `✋ <b>${from}</b> дав(ла) п’ять <b>${to}</b>!`],
+  ["дай п'ять", (from, to) => `✋ <b>${from}</b> дав(ла) п’ять <b>${to}</b>!`],
+  ['пригостити кавою', (from, to) => `☕ <b>${from}</b> пригостив(ла) гарячою кавою <b>${to}</b>!`],
+  ['кава', (from, to) => `☕ <b>${from}</b> пригостив(ла) гарячою кавою <b>${to}</b>!`],
+  ['погладити', (from, to) => `🥰 <b>${from}</b> ніжно погладив(ла) по голові <b>${to}</b>!`],
+  ['похвалити', (from, to) => `🌟 <b>${from}</b> похвалив(ла) <b>${to}</b> за блискучу роботу!`],
+  ['підморгнути', (from, to) => `😉 <b>${from}</b> загадково підморгнув(ла) <b>${to}</b>!`],
+  ['поцілувати', (from, to) => `😘 <b>${from}</b> ніжно поцілував(ла) <b>${to}</b>!`],
+  ['вдарити', (from, to) => `👊 <b>${from}</b> смачно врізав(ла) <b>${to}</b>!`],
+  ['врізати', (from, to) => `👊 <b>${from}</b> смачно врізав(ла) <b>${to}</b>!`],
+  ['вкусити', (from, to) => `🧛‍♂️ <b>${from}</b> зробив(ла) несподіваний кусь за вухо <b>${to}</b>!`],
+  ['кусь', (from, to) => `🧛‍♂️ <b>${from}</b> зробив(ла) несподіваний кусь за вухо <b>${to}</b>!`],
+  ['кинути тапком', (from, to) => `🩴 <b>${from}</b> прицільно кинув(ла) тапком у <b>${to}</b>!`],
+  ['тапок', (from, to) => `🩴 <b>${from}</b> прицільно кинув(ла) тапком у <b>${to}</b>!`],
+  ['облити водою', (from, to) => `💦 <b>${from}</b> облив(ла) крижаною водою <b>${to}</b>!`],
+  ['облити', (from, to) => `💦 <b>${from}</b> облив(ла) крижаною водою <b>${to}</b>!`],
+  ['зв’язати', (from, to) => `🪢 <b>${from}</b> міцно зв’язав(ла) <b>${to}</b> шпигунським вузлом!`],
+  ["зв'язати", (from, to) => `🪢 <b>${from}</b> міцно зв’язав(ла) <b>${to}</b> шпигунським вузлом!`],
+  ['відправити в бункер', (from, to) => `🚪🔒 <b>${from}</b> відправив(ла) <b>${to}</b> охолонути в бункер!`],
+  ['в бункер', (from, to) => `🚪🔒 <b>${from}</b> відправив(ла) <b>${to}</b> охолонути в бункер!`],
+  ['прослухати', (from, to) => `🎧🕵️‍♂️ <b>${from}</b> непомітно поставив(ла) прослушку на <b>${to}</b>!`],
+  ['жучок', (from, to) => `🎧🕵️‍♂️ <b>${from}</b> непомітно поставив(ла) прослушку на <b>${to}</b>!`],
+]);
+
+function normalizeRpText(text) {
+  return String(text).trim().toLocaleLowerCase('uk-UA').replace(/[.!?,;:]+$/u, '');
+}
+
+async function setGroupRpState(message, value) {
+  if (!isGroup(message.chat)) {
+    await sendMessage(message.chat.id, 'Керувати РП-діями можна лише в груповому чаті.');
+    return;
+  }
+  const enabled = String(value || '').trim().toLowerCase();
+  if (enabled !== 'on' && enabled !== 'off') {
+    await sendMessage(message.chat.id, 'Використання: /rp on або /rp off (лише для адміністраторів чату).');
+    return;
+  }
+
+  let member;
+  try {
+    member = await bot.api.getChatMember({ chat_id: message.chat.id, user_id: message.from.id });
+  } catch (error) {
+    console.error('Could not verify group administrator for /rp.', error);
+    await sendMessage(message.chat.id, 'Не вдалося перевірити права адміністратора чату.');
+    return;
+  }
+  if (!['creator', 'administrator'].includes(member.status)) {
+    await sendMessage(message.chat.id, 'Керувати РП-діями може лише адміністратор чату.');
+    return;
+  }
+
+  const isEnabled = enabled === 'on';
+  await db.collection('chats').doc(String(message.chat.id)).set({ rpEnabled: isEnabled }, { merge: true });
+  await sendMessage(message.chat.id, isEnabled ? '🎭 РП-дії увімкнено.' : '🎭 РП-дії вимкнено.');
+}
+
+async function isGroupRpEnabled(chatId) {
+  const chatSnapshot = await db.collection('chats').doc(String(chatId)).get();
+  return chatSnapshot.get('rpEnabled') !== false;
+}
+
+async function processRpAction(message) {
+  if (!isGroup(message.chat) || !message.text || !message.reply_to_message?.from || !message.from) return false;
+  const target = message.reply_to_message.from;
+  if (target.is_bot || String(target.id) === String(message.from.id)) return false;
+
+  const text = normalizeRpText(message.text);
+  const giftMatch = text.match(/^подар(?:ити|увати)\s+(\d+)\s+діамант(?:а|и|ів)?$/u);
+  const action = RP_ACTIONS.get(text);
+  const isRobbery = text === 'пограбувати';
+  if (!action && !giftMatch && !isRobbery) return false;
+  let rpEnabled;
+  try {
+    rpEnabled = await isGroupRpEnabled(message.chat.id);
+  } catch (error) {
+    console.error('Could not read group RP settings.', error);
+    await sendMessage(message.chat.id, 'Не вдалося перевірити налаштування РП-дій.');
+    return true;
+  }
+  if (!rpEnabled) return true;
+
+  const senderName = escapeHtml(displayName(message.from));
+  const targetName = escapeHtml(displayName(target));
+
+  if (action) {
+    await sendMessage(message.chat.id, action(senderName, targetName), { parse_mode: 'HTML' });
+    return true;
+  }
+
+  if (giftMatch) {
+    const amount = Number(giftMatch[1]);
+    if (!Number.isSafeInteger(amount) || amount < 1) {
+      await sendMessage(message.chat.id, 'Кількість діамантів має бути цілим числом від 1.');
+      return true;
+    }
+
+    let result;
+    try {
+      await ensureUser(message.from);
+      const senderRef = users.doc(telegramId(message.from));
+      const targetRef = users.doc(telegramId(target));
+      result = await db.runTransaction(async (transaction) => {
+        const [senderSnapshot, targetSnapshot] = await Promise.all([
+          transaction.get(senderRef),
+          transaction.get(targetRef),
+        ]);
+        if (!targetSnapshot.exists) return { status: 'recipient-missing' };
+        const diamonds = Math.round(Number(senderSnapshot.get('diamonds')) || 0);
+        if (diamonds < amount) return { status: 'insufficient' };
+
+        transaction.update(senderRef, { diamonds: diamonds - amount });
+        transaction.update(targetRef, {
+          diamonds: Math.round(Number(targetSnapshot.get('diamonds')) || 0) + amount,
+        });
+        return { status: 'sent' };
+      });
+    } catch (error) {
+      console.error('Failed to transfer diamonds through an RP action.', error);
+      await sendMessage(message.chat.id, 'Не вдалося переказати діаманти. Спробуй пізніше.');
+      return true;
+    }
+
+    if (result.status === 'recipient-missing') {
+      await sendMessage(message.chat.id, `💎 ${targetName} ще не має профілю. Нехай гравець спершу запустить бота через /start.`);
+    } else if (result.status === 'insufficient') {
+      await sendMessage(message.chat.id, 'Не вистачає діамантів для цього подарунка.');
+    } else {
+      await sendMessage(
+        message.chat.id,
+        `💎✨ <b>${senderName}</b> розкішно подарував(ла) <b>${amount} 💎</b> агенту <b>${targetName}</b>!`,
+        { parse_mode: 'HTML' },
+      );
+    }
+    return true;
+  }
+
+  const now = Date.now();
+  const succeeds = Math.random() < 0.5;
+  const requestedAmount = 10 + Math.floor(Math.random() * 21);
+  let result;
+  try {
+    await ensureUser(message.from);
+    const senderRef = users.doc(telegramId(message.from));
+    const targetRef = users.doc(telegramId(target));
+    result = await db.runTransaction(async (transaction) => {
+      const [senderSnapshot, targetSnapshot] = await Promise.all([
+        transaction.get(senderRef),
+        transaction.get(targetRef),
+      ]);
+      if (!targetSnapshot.exists) return { status: 'recipient-missing' };
+
+      const senderData = senderSnapshot.data();
+      const vip = Number(senderData.vipUntil || 0) > now;
+      const balance = Math.round(Number(senderData.balance) || 0);
+      const targetBalance = Math.round(Number(targetSnapshot.get('balance')) || 0);
+      const cooldown = Number(senderData.lastRobberyAt || 0);
+      if (now - cooldown < 2 * 60 * 60 * 1000) {
+        return { status: 'cooldown', remaining: 2 * 60 * 60 * 1000 - (now - cooldown) };
+      }
+
+      const fee = vip ? 0 : 25;
+      if (balance < fee + 15) return { status: 'insufficient', fee, fine: 15 };
+      const robberySuccess = succeeds && targetBalance >= 10;
+      const fine = robberySuccess ? 0 : 15;
+      const updates = {
+        balance: balance - fee - fine,
+        lastRobberyAt: now,
+      };
+      if (robberySuccess) {
+        const stolen = Math.min(requestedAmount, targetBalance);
+        updates.balance += stolen;
+        transaction.update(targetRef, { balance: targetBalance - stolen });
+        transaction.update(senderRef, updates);
+        return { status: 'success', amount: stolen, fee };
+      }
+
+      transaction.update(senderRef, updates);
+      return { status: 'failed', fee, fine, vip };
+    });
+  } catch (error) {
+    console.error('Failed to process an RP robbery.', error);
+    await sendMessage(message.chat.id, 'Не вдалося виконати пограбування. Спробуй пізніше.');
+    return true;
+  }
+
+  if (result.status === 'recipient-missing') {
+    await sendMessage(message.chat.id, `${targetName} ще не має профілю в грі.`);
+  } else if (result.status === 'cooldown') {
+    const minutes = Math.ceil(result.remaining / 60000);
+    await sendMessage(message.chat.id, `🥷 Пограбування перезаряджається. Спробуй знову приблизно через ${minutes} хв.`);
+  } else if (result.status === 'insufficient') {
+    const need = result.fee + result.fine;
+    await sendMessage(message.chat.id, `Для цієї спроби потрібно щонайменше ${need} 🪙.`);
+  } else if (result.status === 'success') {
+    await sendMessage(
+      message.chat.id,
+      `🥷💰 <b>${senderName}</b> успішно пограбував(ла) <b>${targetName}</b> і забрав(ла) ${result.amount} 🪙!${result.fee ? ` (витрачено ${result.fee} 🪙)` : ''}`,
+      { parse_mode: 'HTML' },
+    );
+  } else {
+    await sendMessage(
+      message.chat.id,
+      `🥷💨 <b>${senderName}</b> не зміг(ла) пограбувати <b>${targetName}</b> та отримав(ла) штраф ${result.fine} 🪙.${result.fee ? ` Витрачено ${result.fee} 🪙 за спробу.` : ''}`,
+      { parse_mode: 'HTML' },
+    );
+  }
+  return true;
+}
+
 async function sendStart(chatId, chatType, user) {
   await ensureUser(user);
   const keyboard = chatType === 'private'
@@ -265,7 +484,8 @@ async function sendHelp(chatId) {
     '<b>🎯 Команди ШПИГУН</b>\n'
       + '/start — відкрити бота\n/play — запустити Mini App\n/balance — баланс 🪙 та 💎\n'
       + '/zp — зарплата агента раз на 3 години\n/top — рейтинг гравців\n/shop — магазин діамантів\n'
-      + '/support — написати адміністратору\n\n'
+      + '/support — написати адміністратору\n'
+      + 'У групі адміністратори можуть керувати РП-діями: /rp on або /rp off.\n\n'
       + 'У групі: «Зіграти в монетку &lt;ставка&gt;» або «Зіграти в кубика &lt;ставка&gt;» '
       + '(10–300 🪙).',
     { parse_mode: 'HTML' },
@@ -1316,6 +1536,9 @@ onUpdate('message', async (context) => {
         case 'help':
           await sendHelp(message.chat.id);
           return;
+        case 'rp':
+          await setGroupRpState(message, command[2]);
+          return;
         case 'support':
           await startSupport(message.chat.id, message.from);
           return;
@@ -1323,6 +1546,8 @@ onUpdate('message', async (context) => {
           break;
       }
     }
+
+    if (await processRpAction(message)) return;
 
     if (!message.text) return;
     if (/^баланс$/i.test(message.text.trim())) {
