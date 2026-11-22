@@ -845,10 +845,12 @@ window.DurakMultiplayer = (() => {
     if (game.trump?.rank && C.SUITS[game.trump.suit]) {
       const suit = C.SUITS[game.trump.suit];
       const hasDeck = game.deck.length > 0;
+      const hasClosedCards = game.deck.length > 1;
       const trumpLabel = `${C.rankLabel(game.trump.rank)} ${suit.sym}`;
       trump.classList.toggle('empty', !hasDeck);
+      trump.classList.toggle('only-trump', hasDeck && !hasClosedCards);
       trump.setAttribute('aria-label', `Козир ${trumpLabel}`);
-      if (stockBack) stockBack.hidden = !hasDeck;
+      if (stockBack) stockBack.hidden = !hasClosedCards;
       if (trumpSuit) trumpSuit.textContent = suit.sym;
       if (hasDeck) {
         const rank = document.createElement('span');
@@ -865,6 +867,7 @@ window.DurakMultiplayer = (() => {
       }
     } else {
       trump.classList.add('empty');
+      trump.classList.remove('only-trump');
       trump.removeAttribute('aria-label');
       if (stockBack) stockBack.hidden = true;
       const suit = C.SUITS[game.trumpSuit];
@@ -1184,8 +1187,8 @@ window.DurakMultiplayer = (() => {
     timerVersion += 1;
 
     const deck = C.newDeck(deckSize);
-    const trump = deck.pop();
-    const handSize = Math.min(6, Math.floor(deck.length / players.length));
+    const trump = deck[deck.length - 1];
+    const handSize = Math.min(6, Math.floor((deck.length - 1) / players.length));
     const gamePlayers = players.map((player) => ({
       id: player.id,
       name: player.name || (player.id === localPlayerId ? 'Гравець' : 'Бот'),

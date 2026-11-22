@@ -1906,6 +1906,11 @@ body.durak-game-active .views {
   font-weight: 900;
 }
 
+.durak-mp-trump.only-trump {
+  top: 12px;
+  left: 5px;
+}
+
 .durak-mp-trump-symbol {
   font-size: 32px;
   line-height: 1;
