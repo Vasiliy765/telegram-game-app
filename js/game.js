@@ -401,6 +401,115 @@
     window.renderPlayerAvatar(document.getElementById('header-avatar'), profile);
     const headerVip = document.getElementById('header-vip-badge');
     if (headerVip) headerVip.hidden = !profile.isVip;
+    renderInventory();
+  }
+
+  function renderInventory() {
+    const grid = document.getElementById('profile-inventory-items');
+    const empty = document.getElementById('profile-inventory-empty');
+    if (!grid || !empty) return;
+
+    const catalog = window.Store?.getSkinCatalog?.() || [];
+    const ownedSkins = Array.isArray(window.APP_STATE.ownedSkins)
+      ? window.APP_STATE.ownedSkins
+      : [DEFAULT_CARD_SKIN];
+    const items = ownedSkins
+      .filter((key) => key !== DEFAULT_CARD_SKIN)
+      .map((key) => catalog.find((skin) => skin.key === key))
+      .filter(Boolean)
+      .map((skin) => ({ ...skin, type: 'skins' }));
+    const vipUntil = Number(window.APP_STATE.vipUntil) || 0;
+    if (vipUntil > Date.now()) {
+      items.push({
+        key: 'vip-status',
+        name: 'VIP-статус Агента',
+        desc: `Активний до ${new Date(vipUntil).toLocaleDateString('uk-UA')}`,
+        type: 'statuses',
+      });
+    }
+
+    const search = document.getElementById('profile-inventory-search');
+    const filter = document.getElementById('profile-inventory-filter');
+    const query = search?.value.trim().toLocaleLowerCase('uk-UA') || '';
+    const selectedType = filter?.value || 'all';
+    const visibleItems = items.filter((item) =>
+      (selectedType === 'all' || item.type === selectedType) &&
+      item.name.toLocaleLowerCase('uk-UA').includes(query)
+    );
+    const count = document.getElementById('profile-inventory-count');
+    if (count) count.textContent = `Предметів: ${items.length}`;
+
+    grid.replaceChildren();
+    visibleItems.forEach((item) => {
+      const card = document.createElement('article');
+      card.className = 'profile-inventory-item';
+
+      const preview = document.createElement('div');
+      preview.className = `profile-inventory-preview${item.type === 'statuses' ? ' status' : ''}`;
+      if (item.type === 'statuses') {
+        preview.textContent = '👑';
+      } else {
+        const image = document.createElement('img');
+        image.src = window.CARDS.cardBackImg(item.key, 96);
+        image.alt = `Рубашка карт «${item.name}»`;
+        preview.appendChild(image);
+      }
+
+      const details = document.createElement('div');
+      details.className = 'profile-inventory-details';
+      const name = document.createElement('h4');
+      name.textContent = item.name;
+      const description = document.createElement('p');
+      description.textContent = item.desc;
+      details.append(name, description);
+      card.append(preview, details);
+
+      const isActiveSkin = item.type === 'skins' &&
+        item.key === window.APP_STATE.activeSkin;
+      if (isActiveSkin) {
+        const active = document.createElement('span');
+        active.className = 'profile-inventory-active';
+        active.textContent = 'Активно ✅';
+        card.appendChild(active);
+      } else if (item.type === 'skins') {
+        const button = document.createElement('button');
+        button.className = 'profile-inventory-use';
+        button.type = 'button';
+        button.textContent = 'Використати';
+        button.addEventListener('click', () => {
+          if (typeof window.Store?.buyOrSelectSkin !== 'function') {
+            console.error('The card-skin store is unavailable.');
+            return;
+          }
+          void window.Store.buyOrSelectSkin(item.key);
+        });
+        card.appendChild(button);
+      } else {
+        const active = document.createElement('span');
+        active.className = 'profile-inventory-active';
+        active.textContent = 'Активно ✅';
+        card.appendChild(active);
+      }
+      grid.appendChild(card);
+    });
+
+    const noOwnedItems = items.length === 0;
+    empty.hidden = visibleItems.length > 0;
+    const emptyMessage = document.getElementById('profile-inventory-empty-message');
+    if (emptyMessage) {
+      emptyMessage.textContent = noOwnedItems
+        ? 'Куплені предмети та активний VIP з’являться тут.'
+        : 'Спробуйте змінити пошук або фільтр.';
+    }
+    const shopButton = document.getElementById('profile-inventory-shop');
+    if (shopButton) shopButton.hidden = !noOwnedItems;
+  }
+
+  function bindInventory() {
+    document.getElementById('profile-inventory-search')
+      ?.addEventListener('input', renderInventory);
+    document.getElementById('profile-inventory-filter')
+      ?.addEventListener('change', renderInventory);
   }
 
   function normalizeUpgrades(value) {
@@ -863,12 +972,12 @@
 
   function renderBalance() {
     const balance = formatCurrency(window.APP_STATE.balance);
-    ['balance', 'store-balance', 'profile-balance', 'durak-balance'].forEach((id) => {
+    ['balance', 'store-balance', 'durak-balance'].forEach((id) => {
       const element = document.getElementById(id);
       if (element) element.textContent = balance;
     });
     const diamonds = formatCurrency(window.APP_STATE.diamonds);
-    ['header-diamonds', 'profile-diamonds', 'store-diamonds'].forEach((id) => {
+    ['header-diamonds', 'store-diamonds'].forEach((id) => {
       const element = document.getElementById(id);
       if (element) element.textContent = diamonds;
     });
@@ -1180,6 +1289,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     renderBalance();
     renderTelegramProfile();
+    bindInventory();
     renderAgentUpgrades();
     bindAgentUpgrades();
     bindDiamondsShop();

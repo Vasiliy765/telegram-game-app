@@ -311,6 +311,10 @@ window.Store = (() => {
     renderVip();
   }
 
+  function getSkinCatalog() {
+    return SKINS.map(({ key, name, desc }) => ({ key, name, desc }));
+  }
+
   document.querySelectorAll('[data-diamond-exchange]').forEach((button) => {
     button.addEventListener('click', () => {
       void exchangeDiamonds(Number(button.dataset.diamondExchange));
@@ -333,5 +337,5 @@ window.Store = (() => {
     renderVip();
   });
 
-  return { init, exchangeDiamonds, buyOrSelectSkin, buyVip };
+  return { init, exchangeDiamonds, buyOrSelectSkin, buyVip, getSkinCatalog };
 })();
