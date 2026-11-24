@@ -34,15 +34,24 @@ const updateContext = new AsyncLocalStorage();
 const WEBAPP_URL = 'https://vasiliy765.github.io/telegram-game-app/';
 const WEBAPP_ORIGIN = new URL(WEBAPP_URL).origin;
 const ADMIN_USER_STATUS_PATH = '/api/admin/user-status';
+const ADMIN_SHOP_PRICING_PATH = '/api/admin/shop-pricing';
 const SALARY_COOLDOWN_MS = 3 * 60 * 60 * 1000;
 const ITEM_GAME_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 const VIP_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_UPGRADES = Object.freeze({ diplomat: 0, luck: 0, rank: 0, network: 0 });
+const DEFAULT_SHOP_PRICING = Object.freeze({
+  stars10: 20,
+  stars50: 90,
+  stars100: 170,
+  stars300: 480,
+  vipPrice: 40,
+});
+const MAX_TELEGRAM_STARS_PRICE = 2_147_483_647;
 const DIAMOND_PACKAGES = Object.freeze({
-  '10': { diamonds: 10, stars: 15 },
-  '50': { diamonds: 50, stars: 65 },
-  '100': { diamonds: 100, stars: 115 },
-  '300': { diamonds: 300, stars: 270 },
+  '10': { diamonds: 10, priceKey: 'stars10' },
+  '50': { diamonds: 50, priceKey: 'stars50' },
+  '100': { diamonds: 100, priceKey: 'stars100' },
+  '300': { diamonds: 300, priceKey: 'stars300' },
 });
 const DIAMONDS_ADMIN_ID = '7784142934';
 const ADMIN_ID = '7784142934';
@@ -777,9 +786,46 @@ function validateTelegramInitData(initData) {
   return user;
 }
 
-async function createDiamondsInvoiceLink(userId, packageId) {
-  const packageDetails = DIAMOND_PACKAGES[packageId];
-  if (!packageDetails) throw new Error(`Unknown diamond package: ${packageId}`);
+function normalizeShopPricing(value = {}) {
+  return Object.fromEntries(Object.entries(DEFAULT_SHOP_PRICING).map(([key, fallback]) => {
+    const price = value[key] == null ? fallback : value[key];
+    const max = key.startsWith('stars') ? MAX_TELEGRAM_STARS_PRICE : Number.MAX_SAFE_INTEGER;
+    if (!Number.isSafeInteger(price) || price < 1 || price > max) {
+      throw new Error(`Invalid price in Firestore config/shop: ${key}.`);
+    }
+    return [key, price];
+  }));
+}
+
+function validateShopPricingInput(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw httpError(400, 'A shop pricing object is required.');
+  }
+  for (const key of Object.keys(DEFAULT_SHOP_PRICING)) {
+    if (!Object.hasOwn(value, key)) {
+      throw httpError(400, `The ${key} shop price is required.`);
+    }
+  }
+  try {
+    return normalizeShopPricing(value);
+  } catch (error) {
+    throw httpError(400, error.message);
+  }
+}
+
+async function getShopPricing() {
+  const snapshot = await db.collection('config').doc('shop').get();
+  return normalizeShopPricing(snapshot.exists ? snapshot.data() : DEFAULT_SHOP_PRICING);
+}
+
+async function createDiamondsInvoiceLink(userId, packageId, savedShopPricing = null) {
+  const packageDefinition = DIAMOND_PACKAGES[packageId];
+  if (!packageDefinition) throw new Error(`Unknown diamond package: ${packageId}`);
+  const shopPricing = savedShopPricing || await getShopPricing();
+  const packageDetails = {
+    ...packageDefinition,
+    stars: shopPricing[packageDefinition.priceKey],
+  };
 
   const payload = `diamonds:${crypto.randomUUID()}`;
   const purchaseRef = diamondPurchases.doc(payload);
@@ -815,16 +861,13 @@ async function createDiamondsInvoiceLink(userId, packageId) {
 }
 
 async function sendDiamondsShop(chatId, user) {
+  const shopPricing = await getShopPricing();
   const packages = await Promise.all(Object.entries(DIAMOND_PACKAGES).map(
-    async ([packageId, packageDetails]) => {
-      const deals = {
-        '50': ' · Вигода 13%',
-        '100': ' · Вигода 23%',
-        '300': ' · Економія 40%',
-      };
+    async ([packageId, packageDefinition]) => {
+      const stars = shopPricing[packageDefinition.priceKey];
       return {
-        text: `💎 ${packageDetails.diamonds} — ⭐️ ${packageDetails.stars}${deals[packageId] || ''}`,
-        url: await createDiamondsInvoiceLink(telegramId(user), packageId),
+        text: `💎 ${packageDefinition.diamonds} — ⭐️ ${stars}`,
+        url: await createDiamondsInvoiceLink(telegramId(user), packageId, shopPricing),
       };
     },
   ));
@@ -874,8 +917,9 @@ async function validateDiamondPurchase(payload, userId, currency, totalAmount) {
     && purchase.userId === userId
     && packageDetails
     && purchase.diamonds === packageDetails.diamonds
-    && purchase.stars === packageDetails.stars
-    && totalAmount === packageDetails.stars;
+    && Number.isSafeInteger(purchase.stars)
+    && purchase.stars > 0
+    && totalAmount === purchase.stars;
 }
 
 async function processSuccessfulDiamondPayment(message) {
@@ -913,7 +957,9 @@ async function processSuccessfulDiamondPayment(message) {
     if (!packageDetails
         || purchase.userId !== userId
         || payment.currency !== 'XTR'
-        || payment.total_amount !== packageDetails.stars) {
+        || !Number.isSafeInteger(purchase.stars)
+        || purchase.stars < 1
+        || payment.total_amount !== purchase.stars) {
       await refund('Refunded a successful payment that did not match its invoice.');
       return;
     }
@@ -937,9 +983,9 @@ async function processSuccessfulDiamondPayment(message) {
       if (currentData.status !== 'pending'
           || currentData.userId !== userId
           || currentData.packageId !== purchase.packageId
-          || currentData.stars !== packageDetails.stars
+          || currentData.stars !== purchase.stars
           || currentData.diamonds !== packageDetails.diamonds
-          || payment.total_amount !== packageDetails.stars) {
+          || payment.total_amount !== purchase.stars) {
         throw new Error('Diamond purchase is not eligible for credit.');
       }
 
@@ -2023,7 +2069,8 @@ const server = http.createServer((request, response) => {
   const requestUrl = new URL(request.url, 'http://localhost');
   const isInvoiceRequest = requestUrl.pathname === '/api/create-diamonds-invoice';
   const isAdminStatusRequest = requestUrl.pathname === ADMIN_USER_STATUS_PATH;
-  if (!isInvoiceRequest && !isAdminStatusRequest) {
+  const isAdminShopPricingRequest = requestUrl.pathname === ADMIN_SHOP_PRICING_PATH;
+  if (!isInvoiceRequest && !isAdminStatusRequest && !isAdminShopPricingRequest) {
     response.writeHead(404);
     response.end();
     return;
@@ -2113,6 +2160,22 @@ const server = http.createServer((request, response) => {
           return { vipUntil: Number(snapshot.get('vipUntil') || 0), banned };
         });
         sendJson(response, 200, { userId, ...userStatus });
+        return;
+      }
+
+      if (isAdminShopPricingRequest) {
+        const headerInitData = request.headers['x-telegram-init-data'];
+        const initData = typeof body.initData === 'string' && body.initData.length > 0
+          ? body.initData
+          : headerInitData;
+        const telegramUser = validateTelegramInitData(initData);
+        if (String(telegramUser.id) !== ADMIN_ID) {
+          throw httpError(403, 'Only the administrator can change shop pricing.');
+        }
+
+        const prices = validateShopPricingInput(body.prices);
+        await db.collection('config').doc('shop').set(prices, { merge: true });
+        sendJson(response, 200, { prices });
         return;
       }
 

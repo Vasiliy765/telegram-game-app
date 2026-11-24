@@ -122,6 +122,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /config/{configId} {
+      allow get: if signedIn() && configId == 'shop';
+      allow list, write: if false;
+    }
+
     match /players/{uid} {
       allow get, list: if signedIn();
       allow create, update: if signedIn() &&

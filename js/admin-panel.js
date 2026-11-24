@@ -1,6 +1,15 @@
 (function () {
   const ADMIN_ID = '7784142934';
   const ADMIN_API_URL = 'https://telegram-game-app.onrender.com/api/admin/user-status';
+  const ADMIN_SHOP_PRICING_API_URL = 'https://telegram-game-app.onrender.com/api/admin/shop-pricing';
+  const DEFAULT_SHOP_PRICING = window.DEFAULT_SHOP_PRICING;
+  const SHOP_PRICING_FIELDS = [
+    { key: 'stars10', label: '10 💎 =', currency: '⭐' },
+    { key: 'stars50', label: '50 💎 =', currency: '⭐' },
+    { key: 'stars100', label: '100 💎 =', currency: '⭐' },
+    { key: 'stars300', label: '300 💎 =', currency: '⭐' },
+    { key: 'vipPrice', label: '👑 VIP (30 днів) =', currency: '💎' },
+  ];
   const isAdmin = () => {
     const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
     if (telegramId != null) return String(telegramId) === ADMIN_ID;
@@ -37,7 +46,7 @@
 
     const ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(10,10,14,.88);display:none;align-items:center;justify-content:center;padding:16px';
-    ov.innerHTML = '<div style="width:100%;max-width:390px;background:#18181f;border:1px solid #333;border-radius:18px;padding:18px;color:#fff">' +
+    ov.innerHTML = '<div style="width:100%;max-width:390px;max-height:calc(100dvh - 32px);overflow-y:auto;background:#18181f;border:1px solid #333;border-radius:18px;padding:18px;color:#fff">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-size:17px">🛡️ Адмін-панель</b><button id="sa-x" style="background:#27272a;border:none;color:#fff;width:30px;height:30px;border-radius:50%">✕</button></div>' +
       '<div style="display:flex;gap:8px;margin-bottom:10px"><input id="sa-q" placeholder="@username або ID" style="flex:1;background:#0f0f13;border:1px solid #333;border-radius:10px;padding:10px;color:#fff"><button id="sa-s" style="background:#f43f5e;border:none;border-radius:10px;padding:0 14px;color:#fff;font-weight:700">Знайти</button></div>' +
       '<div id="sa-chips" style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap"></div>' +
@@ -47,11 +56,87 @@
       '<div style="display:flex;gap:8px;margin-bottom:10px"><div style="flex:1;background:#18181f;padding:8px;border-radius:8px;text-align:center"><b id="sa-uc" style="color:#fbbf24"></b></div><div style="flex:1;background:#18181f;padding:8px;border-radius:8px;text-align:center"><b id="sa-ud" style="color:#38bdf8"></b></div></div>' +
       '<input id="sa-amt" type="number" placeholder="Сума (напр. 100 або -50)" style="width:100%;box-sizing:border-box;background:#18181f;border:1px solid #333;border-radius:8px;padding:10px;color:#fff;margin-bottom:8px">' +
       '<div style="display:flex;gap:8px;margin-bottom:8px"><button id="sa-bc" style="flex:1;background:#eab308;color:#000;border:none;border-radius:8px;padding:10px;font-weight:800">Змінити 🪙</button><button id="sa-bd" style="flex:1;background:#0284c7;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:800">Змінити 💎</button></div>' +
-      '<div style="display:grid;gap:8px"><button id="sa-vip" style="background:#a16207;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:800">👑 Видати / Зняти VIP</button><button id="sa-ban" style="background:#b91c1c;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:800">🚫 Заблокувати / Розблокувати</button></div></div></div>';
+      '<div style="display:grid;gap:8px"><button id="sa-vip" style="background:#a16207;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:800">👑 Видати / Зняти VIP</button><button id="sa-ban" style="background:#b91c1c;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:800">🚫 Заблокувати / Розблокувати</button></div></div>' +
+      '<section style="margin-top:16px;padding-top:14px;border-top:1px solid #333"><b style="display:block;margin-bottom:10px">⚙️ Ціни донату та VIP</b>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+      SHOP_PRICING_FIELDS.map(({ key, label, currency }) =>
+        `<label style="display:grid;gap:5px;font-size:12px;color:#d4d4d8">${label}<span style="display:flex;align-items:center;gap:6px"><input id="sa-price-${key}" type="number" min="1" step="1" inputmode="numeric" style="width:100%;box-sizing:border-box;background:#0f0f13;border:1px solid #333;border-radius:8px;padding:9px;color:#fff"><span>${currency}</span></span></label>`
+      ).join('') +
+      '</div><button id="sa-save-prices" type="button" style="width:100%;margin-top:10px;background:#16a34a;color:#fff;border:none;border-radius:9px;padding:11px;font-weight:800">💾 Зберегти ціни</button>' +
+      '<div id="sa-pricing-status" role="status" aria-live="polite" style="min-height:16px;margin-top:8px;font-size:12px;color:#a1a1aa"></div></section></div>';
     document.body.appendChild(ov);
 
     let sel = null;
     const st = ov.querySelector('#sa-st'), card = ov.querySelector('#sa-card');
+    const pricingStatus = ov.querySelector('#sa-pricing-status');
+    const pricingSaveButton = ov.querySelector('#sa-save-prices');
+    let pricingDirty = false;
+    function setPricingInputs(pricing = window.APP_STATE?.shopPricing || DEFAULT_SHOP_PRICING) {
+      SHOP_PRICING_FIELDS.forEach(({ key }) => {
+        ov.querySelector(`#sa-price-${key}`).value = String(pricing[key] ?? DEFAULT_SHOP_PRICING[key]);
+      });
+    }
+
+    window.addEventListener('shoppricingchange', (event) => {
+      if (!pricingDirty) setPricingInputs(event.detail);
+    });
+    SHOP_PRICING_FIELDS.forEach(({ key }) => {
+      ov.querySelector(`#sa-price-${key}`).addEventListener('input', () => {
+        pricingDirty = true;
+        pricingStatus.textContent = '';
+      });
+    });
+
+    async function saveShopPricing() {
+      const prices = {};
+      for (const { key } of SHOP_PRICING_FIELDS) {
+        const value = Number(ov.querySelector(`#sa-price-${key}`).value);
+        if (!Number.isSafeInteger(value) || value < 1 ||
+            (key.startsWith('stars') && value > 2_147_483_647)) {
+          pricingStatus.textContent = 'Усі ціни мають бути додатними цілими числами.';
+          return;
+        }
+        prices[key] = value;
+      }
+
+      const initData = window.Telegram?.WebApp?.initData;
+      if (!initData) {
+        pricingStatus.textContent = 'Не вдалося перевірити Telegram-акаунт адміністратора.';
+        return;
+      }
+
+      pricingSaveButton.disabled = true;
+      SHOP_PRICING_FIELDS.forEach(({ key }) => {
+        ov.querySelector(`#sa-price-${key}`).disabled = true;
+      });
+      pricingStatus.textContent = 'Зберігаємо ціни…';
+      try {
+        const response = await fetch(ADMIN_SHOP_PRICING_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ initData, prices }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Не вдалося зберегти ціни.');
+        if (!result.prices || typeof result.prices !== 'object') {
+          throw new Error('Сервер повернув некоректну конфігурацію цін.');
+        }
+        window.applyShopPricing?.(result.prices);
+        pricingDirty = false;
+        setPricingInputs(result.prices);
+        pricingStatus.textContent = '✅ Ціни оновлено!';
+      } catch (error) {
+        console.error('Unable to update shop pricing from the admin panel.', error);
+        pricingStatus.textContent = error.message || 'Не вдалося зберегти ціни.';
+      } finally {
+        pricingSaveButton.disabled = false;
+        SHOP_PRICING_FIELDS.forEach(({ key }) => {
+          ov.querySelector(`#sa-price-${key}`).disabled = false;
+        });
+      }
+    }
+
+    pricingSaveButton.addEventListener('click', () => { void saveShopPricing(); });
     const draw = () => {
       card.style.display = sel ? 'block' : 'none';
       if (!sel) return;
@@ -199,7 +284,11 @@
       }
     }
 
-    const openPanel = () => { ov.style.display = 'flex'; void chips(); };
+    const openPanel = () => {
+      ov.style.display = 'flex';
+      if (!pricingDirty) setPricingInputs();
+      void chips();
+    };
     profileBtn.onclick = openPanel;
     ov.querySelector('#sa-x').onclick = () => ov.style.display = 'none';
     ov.querySelector('#sa-s').onclick = find;

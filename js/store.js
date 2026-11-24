@@ -2,6 +2,7 @@
 window.Store = (() => {
   const $ = (id) => document.getElementById(id);
   const DEFAULT_SKIN = 'classic-red';
+  const DEFAULT_SHOP_PRICING = window.DEFAULT_SHOP_PRICING;
   const EXCHANGES = [
     { diamonds: 10, coins: 150 },
     { diamonds: 50, coins: 850, bonus: '+13%' },
@@ -14,7 +15,6 @@ window.Store = (() => {
     { key: 'spy', name: 'Тінь Шпигуна', desc: 'Загадковий агентський стиль', cost: 35, currency: 'diamonds' },
     { key: 'emerald', name: 'Королівський Смарагд', desc: 'Смарагдова колода королів', cost: 50, currency: 'diamonds' },
   ];
-  const VIP_COST = 40;
   const VIP_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
   let state = {
     balance: 0,
@@ -22,6 +22,7 @@ window.Store = (() => {
     ownedSkins: [DEFAULT_SKIN],
     activeSkin: DEFAULT_SKIN,
     vipUntil: 0,
+    shopPricing: { ...DEFAULT_SHOP_PRICING },
   };
   let busy = false;
   let actionStatus = '';
@@ -34,7 +35,18 @@ window.Store = (() => {
       ownedSkins: Array.isArray(appState.ownedSkins) ? appState.ownedSkins : [DEFAULT_SKIN],
       activeSkin: appState.activeSkin || DEFAULT_SKIN,
       vipUntil: Number(appState.vipUntil) || 0,
+      shopPricing: { ...DEFAULT_SHOP_PRICING, ...appState.shopPricing },
     };
+  }
+
+  function readShopPricing(value = {}) {
+    return Object.fromEntries(Object.entries(DEFAULT_SHOP_PRICING).map(([key, fallback]) => {
+      const candidate = value[key] == null ? fallback : Number(value[key]);
+      if (!Number.isSafeInteger(candidate) || candidate < 1) {
+        throw new Error(`Некоректна ціна магазину (${key}) у Firestore.`);
+      }
+      return [key, candidate];
+    }));
   }
 
   function toast(message) {
@@ -53,7 +65,7 @@ window.Store = (() => {
     }
     const userRef = await window.getCurrentUserDocumentRef();
     const firestore = window.firebase.firestore();
-    return firestore.runTransaction((transaction) => callback(transaction, userRef));
+    return firestore.runTransaction((transaction) => callback(transaction, userRef, firestore));
   }
 
   function readBalance(snapshot, field) {
@@ -205,14 +217,20 @@ window.Store = (() => {
     setActionStatus('Перевіряємо баланс діамантів…', 'store-vip-action-status');
     renderVip();
     try {
-      const result = await runUserTransaction(async (transaction, userRef) => {
-        const snapshot = await transaction.get(userRef);
+      const result = await runUserTransaction(async (transaction, userRef, firestore) => {
+        const [snapshot, pricingSnapshot] = await Promise.all([
+          transaction.get(userRef),
+          transaction.get(firestore.collection('config').doc('shop')),
+        ]);
         if (!snapshot.exists) throw new Error('Профіль Firestore не знайдено.');
+        const shopPricing = readShopPricing(pricingSnapshot.exists ? pricingSnapshot.data() : {});
         const diamonds = readBalance(snapshot, 'diamonds');
         const balance = readBalance(snapshot, 'balance');
-        if (diamonds < VIP_COST) throw new Error('Для VIP потрібно 40 💎.');
+        if (diamonds < shopPricing.vipPrice) {
+          throw new Error(`Для VIP потрібно ${shopPricing.vipPrice} 💎.`);
+        }
         const vipUntil = Date.now() + VIP_DURATION_MS;
-        const newDiamonds = diamonds - VIP_COST;
+        const newDiamonds = diamonds - shopPricing.vipPrice;
         const newBalance = Math.round(balance);
         transaction.update(userRef, {
           diamonds: newDiamonds,
@@ -296,7 +314,9 @@ window.Store = (() => {
     if (!button) return;
     const isVip = Number(state.vipUntil || 0) > Date.now();
     button.disabled = busy;
-    button.textContent = isVip ? 'Продовжити · 40 💎' : '40 💎';
+    button.textContent = isVip
+      ? `Продовжити · ${state.shopPricing.vipPrice} 💎`
+      : `${state.shopPricing.vipPrice} 💎`;
     if (status) {
       status.textContent = isVip
         ? `VIP активний до ${new Date(state.vipUntil).toLocaleDateString('uk-UA')}.`
@@ -335,6 +355,14 @@ window.Store = (() => {
     state.vipUntil = event.detail.vipUntil;
     renderSkins();
     renderVip();
+  });
+  window.addEventListener('shoppricingchange', (event) => {
+    try {
+      state.shopPricing = readShopPricing(event.detail);
+      renderVip();
+    } catch (error) {
+      console.error('Unable to apply Firestore shop pricing.', error);
+    }
   });
 
   return { init, exchangeDiamonds, buyOrSelectSkin, buyVip, getSkinCatalog };

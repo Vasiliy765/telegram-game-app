@@ -6,6 +6,13 @@
   const BALANCE_KEY = 'tga_balance';
   const DIAMONDS_API_URL = 'https://telegram-game-app.onrender.com';
   const DEFAULT_CARD_SKIN = 'classic-red';
+  const DEFAULT_SHOP_PRICING = Object.freeze({
+    stars10: 20,
+    stars50: 90,
+    stars100: 170,
+    stars300: 480,
+    vipPrice: 40,
+  });
   const NETWORK_CLAIM_COOLDOWN_MS = 24 * 60 * 60 * 1000;
   const DEFAULT_UPGRADES = Object.freeze({
     diplomat: 0,
@@ -61,6 +68,8 @@
   window.APP_STATE.isBanned = false;
   window.APP_STATE.upgrades = { ...DEFAULT_UPGRADES };
   window.APP_STATE.lastNetworkClaim = 0;
+  window.APP_STATE.shopPricing = { ...DEFAULT_SHOP_PRICING };
+  window.DEFAULT_SHOP_PRICING = DEFAULT_SHOP_PRICING;
 
   let roomInviteResolved = false;
   let roomInvite = null;
@@ -858,7 +867,13 @@
     }
 
     if (!window.firebase.apps.length) window.firebase.initializeApp(window.FIREBASE_CONFIG);
+    await getFirebaseUser();
     const firestore = window.firebase.firestore();
+    firestore.collection('config').doc('shop').onSnapshot((snapshot) => {
+      applyShopPricing(snapshot.exists ? snapshot.data() : DEFAULT_SHOP_PRICING);
+    }, (error) => {
+      console.error('Unable to listen for Firestore shop pricing changes.', error);
+    });
     const userId = String(telegramUser.id);
     const userDocumentRef = firestore.collection('users').doc(userId);
     userDocumentRef.onSnapshot((snapshot) => {
@@ -942,6 +957,50 @@
         setLeaderboardMessage('Не вдалося завантажити рейтинг.');
       });
   }
+
+  function applyShopPricing(value) {
+    const pricing = Object.fromEntries(Object.entries(DEFAULT_SHOP_PRICING).map(([key, fallback]) => {
+      const candidate = value?.[key] == null ? fallback : Number(value[key]);
+      if (!Number.isSafeInteger(candidate) || candidate < 1) {
+        console.error(`Invalid shop price in Firestore config/shop: ${key}.`);
+        return [key, fallback];
+      }
+      return [key, candidate];
+    }));
+    window.APP_STATE.shopPricing = pricing;
+
+    const packageButtons = [...document.querySelectorAll('[data-diamond-package]')];
+    const packagePrices = packageButtons.map((button) => {
+      const amount = Number(button.dataset.diamondPackage);
+      const stars = pricing[`stars${amount}`];
+      if (!Number.isSafeInteger(stars)) return null;
+
+      const price = button.querySelector('.diamond-package-price');
+      if (price) price.textContent = `${stars} ⭐️`;
+      const badge = button.querySelector('[data-diamond-package-badge]');
+      if (badge && amount > 10) {
+        const savings = Math.round((1 - (stars / amount) / (pricing.stars10 / 10)) * 100);
+        badge.textContent = savings > 0 ? `Вигода ${savings}%` : '';
+        badge.style.display = savings > 0 ? '' : 'none';
+      }
+      const note = button.querySelector('[data-diamond-package-note]');
+      if (note) {
+        const unitPrice = new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 2 })
+          .format(stars / amount);
+        note.textContent = `${unitPrice} ⭐️ за 1 💎`;
+      }
+      return { button, amount, unitPrice: stars / amount };
+    }).filter(Boolean);
+
+    const bestAmount = packagePrices.reduce((best, item) =>
+      !best || item.unitPrice < best.unitPrice ? item : best, null)?.amount;
+    packagePrices.forEach(({ button, amount }) => {
+      button.classList.toggle('diamond-package-best', amount === bestAmount);
+    });
+
+    window.dispatchEvent(new CustomEvent('shoppricingchange', { detail: pricing }));
+  }
+  window.applyShopPricing = applyShopPricing;
 
   window.refreshCurrentUserBalance = async function refreshCurrentUserBalance() {
     if (!firebaseConfigIsReady() || !window.firebase?.firestore) {
