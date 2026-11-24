@@ -144,8 +144,43 @@ window.DurakMultiplayer = (() => {
     return active[0];
   }
 
+  function defenseCard(pair) {
+    return pair?.defend ?? pair?.defense ?? null;
+  }
+
+  function normalizedRank(rank) {
+    return rank == null ? null : String(rank);
+  }
+
+  function tablePairsFrom(snapshotData) {
+    const pairs = snapshotData?.tablePairs ?? snapshotData?.table ?? snapshotData?.tableCards;
+    return Array.isArray(pairs) ? pairs : [];
+  }
+
+  function playerHandSize(player) {
+    if (!player) return 0;
+    if (game.isHost || samePlayerId(player.id, game.localPlayerId)) {
+      return Array.isArray(player.hand) ? player.hand.length : 0;
+    }
+    const cardCount = Number(player.cardCount);
+    return Number.isSafeInteger(cardCount) && cardCount >= 0
+      ? cardCount
+      : Array.isArray(player.hand) ? player.hand.length : 0;
+  }
+
+  function normalizeTablePairs(snapshotData) {
+    return tablePairsFrom(snapshotData).map((pair) => {
+      const defend = defenseCard(pair);
+      return {
+        ...pair,
+        attack: { ...pair.attack },
+        defend: defend ? { ...defend } : null,
+      };
+    });
+  }
+
   function openPair() {
-    return game.tablePairs.find((pair) => !pair.defend) || null;
+    return game.tablePairs.find((pair) => !defenseCard(pair)) || null;
   }
 
   function isTransferMode() {
@@ -155,10 +190,12 @@ window.DurakMultiplayer = (() => {
 
   function transferDefenderIndex(playerIndex, card) {
     if (!isTransferMode() || playerIndex !== game.defenderIndex || game.isTaking ||
-        !game.tablePairs.length || game.tablePairs.some((pair) => pair.defend)) return -1;
-    if (!game.tablePairs.some((pair) => pair.attack.rank === card.rank)) return -1;
+        !game.tablePairs.length || game.tablePairs.some((pair) => defenseCard(pair))) return -1;
+    if (!game.tablePairs.some((pair) =>
+      normalizedRank(pair.attack.rank) === normalizedRank(card.rank))) return -1;
     const nextIndex = nextActiveIndex(playerIndex);
-    if (nextIndex === playerIndex || game.players[nextIndex].hand.length < game.tablePairs.length + 1) return -1;
+    if (nextIndex === playerIndex ||
+        playerHandSize(game.players[nextIndex]) < game.tablePairs.length + 1) return -1;
     return nextIndex;
   }
 
@@ -182,18 +219,20 @@ window.DurakMultiplayer = (() => {
   }
 
   function allBeaten() {
-    return game.tablePairs.length > 0 && game.tablePairs.every((pair) => Boolean(pair.defend));
+    return game.tablePairs.length > 0 && game.tablePairs.every((pair) => Boolean(defenseCard(pair)));
   }
 
   function unbeatenAttackCount() {
-    return game.tablePairs.filter((pair) => !pair.defend).length;
+    return game.tablePairs.filter((pair) => !defenseCard(pair)).length;
   }
 
   function ranksOnTable() {
     const ranks = new Set();
     game.tablePairs.forEach((pair) => {
-      ranks.add(pair.attack.rank);
-      if (pair.defend) ranks.add(pair.defend.rank);
+      const attackRank = normalizedRank(pair.attack?.rank);
+      const defendRank = normalizedRank(defenseCard(pair)?.rank);
+      if (attackRank !== null) ranks.add(attackRank);
+      if (defendRank !== null) ranks.add(defendRank);
     });
     return ranks;
   }
@@ -203,15 +242,17 @@ window.DurakMultiplayer = (() => {
     if (game.gameOver || !player || player.isOut) return false;
     if (game.tablePairs.length === 0) return index === game.attackerIndex;
     const defender = game.players[game.defenderIndex];
-    if (samePlayerId(player.id, defender.id)) {
+    if (!defender) return false;
+    const isDefender = samePlayerId(player.id, defender.id);
+    if (isDefender) {
       if (game.isTaking) return false;
       if (transferDefenderIndex(index, card) !== -1) return true;
       const pair = openPair();
       return Boolean(pair && C.beat(pair.attack, card, game.trump.suit));
     }
     return game.tablePairs.length < 6 &&
-      unbeatenAttackCount() < defender.hand.length &&
-      ranksOnTable().has(card.rank);
+      unbeatenAttackCount() < playerHandSize(defender) &&
+      ranksOnTable().has(normalizedRank(card.rank));
   }
 
   function findBotTosserIndex() {
@@ -266,7 +307,7 @@ window.DurakMultiplayer = (() => {
       trumpSuit: game.trump?.suit || '',
       tablePairs: game.tablePairs.map((pair) => ({
         attack: { ...pair.attack },
-        defend: pair.defend ? { ...pair.defend } : null,
+        defend: defenseCard(pair) ? { ...defenseCard(pair) } : null,
         attackerIndex: pair.attackerIndex,
         defenderIndex: pair.defenderIndex,
       })),
@@ -368,11 +409,7 @@ window.DurakMultiplayer = (() => {
       trump: { ...trump },
       trumpSuit: snapshotData.trumpSuit || trump?.suit || '',
       isOnline: Boolean(snapshotData.isOnline),
-      tablePairs: (snapshotData.tablePairs || []).map((pair) => ({
-        ...pair,
-        attack: { ...pair.attack },
-        defend: pair.defend ? { ...pair.defend } : null,
-      })),
+      tablePairs: normalizeTablePairs(snapshotData),
       passedPlayers: { ...(snapshotData.passedPlayers || {}) },
       localPlayerId,
       localPlayerIndex,
@@ -658,7 +695,8 @@ window.DurakMultiplayer = (() => {
       const defender = game.players[defenderBefore];
       game.tablePairs.forEach((pair) => {
         defender.hand.push(pair.attack);
-        if (pair.defend) defender.hand.push(pair.defend);
+        const defend = defenseCard(pair);
+        if (defend) defender.hand.push(defend);
       });
     }
 
@@ -996,8 +1034,9 @@ window.DurakMultiplayer = (() => {
       };
       const attackCard = makePlayedCard(pair.attack, pair.attackerIndex, 'attack');
       if (attackCard) pairEl.appendChild(attackCard);
-      if (pair.defend) {
-        const defendCard = makePlayedCard(pair.defend, pair.defenderIndex, 'defend');
+      const defend = defenseCard(pair);
+      if (defend) {
+        const defendCard = makePlayedCard(defend, pair.defenderIndex, 'defend');
         if (defendCard) pairEl.appendChild(defendCard);
       }
       tableEl.appendChild(pairEl);
@@ -1319,11 +1358,7 @@ window.DurakMultiplayer = (() => {
       trump: { ...(savedState.trump || savedState.trumpCard) },
       trumpSuit: savedState.trumpSuit || savedState.trump?.suit || savedState.trumpCard?.suit || '',
       isOnline: Boolean(savedState.isOnline),
-      tablePairs: (savedState.tablePairs || []).map((pair) => ({
-        ...pair,
-        attack: { ...pair.attack },
-        defend: pair.defend ? { ...pair.defend } : null,
-      })),
+      tablePairs: normalizeTablePairs(savedState),
       passedPlayers: { ...(savedState.passedPlayers || {}) },
       takeDeadline: Number(savedState.takeDeadline) || 0,
       localPlayerId,

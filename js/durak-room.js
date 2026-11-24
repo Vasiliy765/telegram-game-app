@@ -630,11 +630,17 @@ window.DurakRoom = (() => {
 
   function applyRemoteGame() {
     if (!state.pendingPublicGame || !Array.isArray(state.pendingHand)) return;
-    const localPlayer = state.pendingPublicGame.players.find((player) =>
+    const remoteGame = state.pendingPublicGame;
+    const tablePairs = remoteGame.tablePairs ?? remoteGame.table ?? remoteGame.tableCards;
+    const publicGame = {
+      ...remoteGame,
+      tablePairs: Array.isArray(tablePairs) ? tablePairs : [],
+    };
+    const localPlayer = publicGame.players.find((player) =>
       sameId(player.id, state.myId));
     if (!localPlayer || state.pendingHand.length !== Number(localPlayer.cardCount)) return;
     const loaded = window.DurakMultiplayer.loadSnapshot(
-      state.pendingPublicGame,
+      publicGame,
       state.myId,
       state.pendingHand,
       enqueueAction,
