@@ -63,6 +63,11 @@ window.TicTacToe = (() => {
   }
 
   function agentRankMarkup(player) {
+    if (player?.isNpc) {
+      return `<small class="npc-name-badge">🤖 Віртуальний • ${escapeHtml(
+        window.NpcSystem?.personalityLabel?.(player.personality) || 'NPC',
+      )}</small>`;
+    }
     if (!player || player.isBot) return '';
     const title = window.getAgentRankTitle?.(player.agentRank ?? player.upgrades?.rank);
     return title ? `<small class="agent-rank-title">🎖️ ${escapeHtml(title)}</small>` : '';
@@ -101,7 +106,9 @@ window.TicTacToe = (() => {
       </main>`)) return;
     publicRoomsUnmount = window.PublicRooms?.mount(
       root().querySelector('#ttt-open-room-list'),
-      (game, roomCode) => window.openPublicRoom(game, roomCode),
+      (game, roomCode, room) => room?.isNpc
+        ? window.startNpcRoom(room)
+        : window.openPublicRoom(game, roomCode),
       'tictactoe',
     ) || null;
     root().querySelector('[data-action="back"]').onclick = leaveToHome;
@@ -269,6 +276,18 @@ window.TicTacToe = (() => {
       console.error('Unable to join tic-tac-toe room', error);
       notify(error.message || 'Не вдалося приєднатися до кімнати.');
       renderMenu();
+    }
+
+    function startNpcGame({ npc, stake, matchId }) {
+      init();
+      state.npc = { ...npc, isBot: true, isNpc: true };
+      state.npcMatchId = matchId;
+      state.npcResultReported = false;
+      if (!startLocalGame('bot', stake, matchId)) {
+        state.npcMatchId = null;
+        state.npc = null;
+        throw new Error('Недостатньо монет для ставки.');
+      }
     }
   }
 
@@ -578,6 +597,7 @@ window.TicTacToe = (() => {
     state.mode = mode;
     state.stake = roundedStake;
     state.matchId = wagerId;
+    state.npcResultReported = false;
     state.board = Array(9).fill(null);
     state.turn = 'X';
     state.symbol = 'X';
@@ -685,6 +705,14 @@ window.TicTacToe = (() => {
   }
 
   function chooseBotMove(board, symbol) {
+    const personality = state.npc?.personality;
+    const difficulty = state.npc?.difficulty;
+    if (difficulty === 'easy' || personality === 'rookie' ||
+        (personality === 'gambler' && Math.random() < 0.65) ||
+        (difficulty === 'medium' && Math.random() < 0.25)) {
+      const moves = emptyCells(board);
+      return moves[Math.floor(Math.random() * moves.length)];
+    }
     let best = emptyCells(board)[0];
     let bestScore = symbol === 'O' ? -Infinity : Infinity;
     emptyCells(board).forEach((index) => {
@@ -749,9 +777,10 @@ window.TicTacToe = (() => {
       : null;
     const localProfile = window.getCurrentPlayerProfile?.();
     const firstPlayer = online ? me : localProfile;
-    const secondPlayer = online ? opponent : null;
+    const secondPlayer = online ? opponent : state.npc || null;
     const firstName = online ? me?.name || 'Ти' : localProfile?.name || (state.mode === 'local' ? 'Гравець 1' : 'Ти');
-    const secondName = online ? opponent?.name || 'Суперник' : state.mode === 'local' ? 'Гравець 2' : state.mode === 'test' ? 'ШІ-бот' : 'Розумний бот';
+    const secondName = online ? opponent?.name || 'Суперник'
+      : state.npc?.name || (state.mode === 'local' ? 'Гравець 2' : state.mode === 'test' ? 'ШІ-бот' : 'Розумний бот');
     const currentName = turnSymbol === 'X' ? firstName : secondName;
     const cells = state.board.map((value, index) => {
       const disabled = Boolean(value) || !localTurn;
@@ -770,7 +799,7 @@ window.TicTacToe = (() => {
       </main>`)) return false;
     const playerAvatars = root().querySelectorAll('.ttt-players .ttt-avatar');
     window.renderPlayerAvatar?.(playerAvatars[0], me || localProfile || { name: firstName }, firstName[0] || 'X');
-    window.renderPlayerAvatar?.(playerAvatars[1], opponent || { name: secondName }, secondName[0] || 'O');
+    window.renderPlayerAvatar?.(playerAvatars[1], opponent || secondPlayer || { name: secondName }, secondPlayer?.avatar || secondName[0] || 'O');
     root().querySelector('[data-action="back"]').onclick = () => {
       if (confirm('Вийти з партії? Ставка не повертається.')) {
         void leaveActiveGame();
@@ -789,6 +818,10 @@ window.TicTacToe = (() => {
   }
 
   async function leaveActiveGame() {
+    if (state.npcMatchId && !state.npcResultReported) {
+      state.npcResultReported = true;
+      window.NpcSystem?.reportResult?.(state.npcMatchId, 'loss');
+    }
     const online = state.online;
     if (online?.db && online.roomData?.meta?.status === 'playing') {
       try {
@@ -841,6 +874,13 @@ window.TicTacToe = (() => {
     const won = winner !== 'draw' && (state.mode === 'local' || winner === state.symbol);
     const payout = Math.round(winner === 'draw' ? state.stake : won ? state.stake * 2 : 0);
     settleWager(state.matchId, payout, state.mode === 'online');
+    if (state.npcMatchId && !state.npcResultReported) {
+      state.npcResultReported = true;
+      window.NpcSystem?.reportResult?.(
+        state.npcMatchId,
+        winner === 'draw' ? 'draw' : won ? 'win' : 'loss',
+      );
+    }
     state.payout = payout;
     state.won = won;
     renderFinal(winner);
@@ -865,11 +905,19 @@ window.TicTacToe = (() => {
     root().querySelector('[data-action="back"]').onclick = () => { disposeOnline(); renderMenu(); };
     root().querySelector('[data-action="sound"]').onclick = toggleSound;
     root().querySelector('[data-action="rematch"]').onclick = () => {
+      if (state.npcMatchId) {
+        state.npcMatchId = null;
+        state.npc = null;
+        renderMenu();
+        return;
+      }
       if (state.mode === 'online' && state.online?.db) void requestOnlineRematch();
       else startLocalGame(state.mode, state.stake);
     };
     root().querySelector('[data-action="new"]').onclick = () => {
       disposeOnline();
+      state.npcMatchId = null;
+      state.npc = null;
       renderMenu();
     };
   }
@@ -952,5 +1000,5 @@ window.TicTacToe = (() => {
     void joinOnlineRoom(roomCode);
   });
 
-  return { init, joinRoom: joinOnlineRoom };
+  return { init, joinRoom: joinOnlineRoom, startNpcGame };
 })();

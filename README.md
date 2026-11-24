@@ -59,3 +59,15 @@ Firestore. Keep the Render bot service online with `BOT_TOKEN` and Firebase
 service credentials configured. The admin can grant diamonds with
 `Видати діаманти <Telegram ID> <кількість>` or by replying to a user's message
 with `Видати діаманти <кількість>`.
+
+## Віртуальні гравці
+
+NPC зберігаються окремими профілями у Firestore в колекції `npcs`; налаштування
+`config/npc` створюються ботом автоматично. Модуль `npc-system.js` керує
+кількістю персонажів, характерами, складністю та резервуванням NPC-столів.
+У Mini App NPC з’являються в рейтингу та серед відкритих столів, а їхні
+результати партій записуються сервером через Firestore-транзакції.
+
+Адмін-панель Mini App дозволяє увімкнути або вимкнути NPC, змінити кількість,
+частоту активності, ім’я, аватарку, характер і складність, переглянути статистику
+та видалити персонажа.

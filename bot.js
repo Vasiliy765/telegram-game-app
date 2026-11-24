@@ -7,6 +7,7 @@ const path = require('node:path');
 const { Bot } = require('node-telegram-bot-api');
 const { run } = require('node-telegram-bot-api/node');
 const admin = require('firebase-admin');
+const { NpcSystem } = require('./npc-system');
 
 const BOT_TOKEN = [
   process.env.BOT_TOKEN,
@@ -27,14 +28,22 @@ admin.initializeApp({
 
 const db = admin.firestore();
 const users = db.collection('users');
+const npcs = db.collection('npcs');
 const challenges = db.collection('challenges');
 const diamondPurchases = db.collection('diamondPurchases');
 const bot = new Bot(BOT_TOKEN);
+const npcSystem = new NpcSystem({
+  db,
+  users,
+  challenges,
+  logger: console,
+});
 const updateContext = new AsyncLocalStorage();
 const WEBAPP_URL = 'https://vasiliy765.github.io/telegram-game-app/';
 const WEBAPP_ORIGIN = new URL(WEBAPP_URL).origin;
 const ADMIN_USER_STATUS_PATH = '/api/admin/user-status';
 const ADMIN_SHOP_PRICING_PATH = '/api/admin/shop-pricing';
+const ADMIN_NPC_PATH = '/api/admin/npc';
 const SALARY_COOLDOWN_MS = 3 * 60 * 60 * 1000;
 const ITEM_GAME_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 const VIP_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -1052,23 +1061,127 @@ async function processSuccessfulDiamondPayment(message) {
   }
 }
 
-async function sendTop(chatId) {
-  const snapshot = await users.orderBy('balance', 'desc').limit(10).get();
-  if (snapshot.empty) {
+async function sendTop(chatId, caller = null) {
+  const config = await npcSystem.getConfig();
+  const [userSnapshot, npcProfiles] = await Promise.all([
+    users.orderBy('balance', 'desc').limit(50).get(),
+    config.enabled ? npcSystem.listNpcProfiles(50) : [],
+  ]);
+  const entries = [
+    ...userSnapshot.docs
+      .filter((doc) => doc.get('isNpc') !== true)
+      .map((doc) => ({ id: doc.id, ...doc.data() })),
+    ...npcProfiles.filter((npc) => npc.enabled !== false && npc.isNpc === true),
+  ].sort((left, right) =>
+    (Number(right.balance) || 0) - (Number(left.balance) || 0) ||
+    String(left.id).localeCompare(String(right.id)));
+  if (!entries.length) {
     await sendMessage(chatId, 'Поки що гравців немає.');
     return;
   }
 
-  const rows = snapshot.docs.map((doc, index) => {
-    const player = doc.data();
+  const topEntries = entries.slice(0, 50);
+  const rows = topEntries.map((player, index) => {
     const playerName = player.name || `Гравець ${player.id}`;
     const vipBadge = Number(player.vipUntil || 0) > Date.now() ? '👑 VIP · ' : '';
-    return `${index + 1}. ${escapeHtml(`${vipBadge}${playerName}`)} — `
-      + `<b>${formatCoins(player.balance || 0)} 🪙</b>`;
+    const npcBadge = player.isNpc ? ' · 🤖 Віртуальний' : '';
+    const wins = Math.round(Number(player.wins) || 0);
+    const losses = Math.round(Number(player.losses) || 0);
+    const rating = Math.round(Number(player.rating) || 1000);
+    return `${index + 1}. ${escapeHtml(`${vipBadge}${playerName}${npcBadge}`)} — `
+      + `<b>${formatCoins(player.balance || 0)} 🪙</b> · ${wins}П/${losses}П · Рейт ${rating}`;
   });
-  await sendMessage(chatId, `<b>🏆 Топ-10 гравців</b>\n${rows.join('\n')}`, {
-    parse_mode: 'HTML',
-  });
+  let remainingMessage = '';
+  if (caller) {
+    const callerId = telegramId(caller);
+    const callerIndex = topEntries.findIndex((entry) => entry.id === callerId);
+    if (callerIndex >= 0) {
+      remainingMessage = '\n✅ Ви вже в ТОП-50.';
+    } else {
+      const callerSnapshot = await users.doc(callerId).get();
+      if (callerSnapshot.exists) {
+        const balance = Number(callerSnapshot.get('balance')) || 0;
+        const countSnapshot = await users.where('balance', '>', balance).count().get();
+        const realAhead = Number(countSnapshot.data().count) || 0;
+        const npcAhead = npcProfiles.filter((npc) => (Number(npc.balance) || 0) > balance).length;
+        const positionsAway = Math.max(0, realAhead + npcAhead - 49);
+        remainingMessage = `\n🎯 До ТОП-50 залишилося ${positionsAway} позицій.`;
+      } else {
+        remainingMessage = '\n🎯 До ТОП-50 залишилося 50+ позицій.';
+      }
+    }
+  }
+  const sections = [];
+  for (let index = 0; index < rows.length; index += 25) {
+    sections.push(rows.slice(index, index + 25).join('\n'));
+  }
+  for (let index = 0; index < sections.length; index += 1) {
+    const heading = index === 0 ? '<b>🏆 Топ-50 гравців</b>\n' : '';
+    const footer = index === sections.length - 1 ? remainingMessage : '';
+    await sendMessage(chatId, `${heading}${sections[index]}${footer}`, {
+      parse_mode: 'HTML',
+    });
+  }
+  if (sections[1]) {
+    await sendMessage(chatId, `<b>🏆 Топ-50 гравців (продовження)</b>\n${sections[1]}`, {
+      parse_mode: 'HTML',
+    });
+  }
+}
+
+async function announceNpcGameResults() {
+  const snapshot = await challenges
+    .where('status', '==', 'completed')
+    .limit(10)
+    .get();
+  for (const doc of snapshot.docs) {
+    const challenge = doc.data();
+    if (challenge.npcAcceptedNotified === true) continue;
+    if (!/^npc_\d+$/.test(String(challenge.accepterId || ''))) continue;
+    const npcSnapshot = await npcs.doc(challenge.accepterId).get();
+    if (!npcSnapshot.exists) continue;
+    const npcName = npcSnapshot.get('name') || 'Віртуальний гравець';
+    if (challenge.game === 'dice') {
+      if (challenge.result === 'draw') {
+        await sendMessage(
+          challenge.chatId,
+          `🎲 Кубик завершено внічию.\n${escapeHtml(challenge.creatorName)} і `
+            + `<b>${escapeHtml(npcName)} [Віртуальний гравець]</b>: `
+            + `${challenge.creatorRoll}:${challenge.accepterRoll}. Ставки повернуті.`,
+          { parse_mode: 'HTML' },
+          challenge.threadId,
+        );
+      } else {
+        const winnerName = challenge.winnerId === challenge.accepterId
+          ? npcName
+          : challenge.creatorName;
+        await sendMessage(
+          challenge.chatId,
+          `🎲 Кубик завершено.\nПереможець: <b>${escapeHtml(winnerName)}</b>`
+            + (challenge.winnerId === challenge.accepterId ? ' [Віртуальний гравець]' : '')
+            + `\nКубики: ${challenge.creatorRoll}:${challenge.accepterRoll}`
+            + ` · Виграш: <b>${formatCoins(challenge.payout || 0)} 🪙</b>.`,
+          { parse_mode: 'HTML' },
+          challenge.threadId,
+        );
+      }
+      await doc.ref.update({ npcAcceptedNotified: true });
+      continue;
+    }
+    const winnerName = challenge.winnerId === challenge.accepterId
+      ? npcName
+      : challenge.creatorName;
+    await sendMessage(
+      challenge.chatId,
+      `🪙 Монетка завершена.\nПереможець: <b>${escapeHtml(winnerName)}</b> [Віртуальний гравець]\n`
+        + `Виграш: <b>${formatCoins(challenge.payout || 0)} 🪙</b>.`,
+      { parse_mode: 'HTML' },
+      challenge.threadId,
+    );
+    await doc.ref.update({
+      npcAcceptedNotified: true,
+    });
+  }
 }
 
 function randomItemDelta() {
@@ -1722,7 +1835,7 @@ onUpdate('message', async (context) => {
           await sendSalary(message.chat.id, message.from);
           return;
         case 'top':
-          await sendTop(message.chat.id);
+          await sendTop(message.chat.id, message.from);
           return;
         case 'shop':
           await sendDiamondsShop(message.chat.id, message.from);
@@ -1783,7 +1896,7 @@ onUpdate('message', async (context) => {
       return;
     }
     if (/^топ$/i.test(text)) {
-      await sendTop(message.chat.id);
+      await sendTop(message.chat.id, message.from);
       return;
     }
     if (/^(зп|зарплата)$/i.test(text)) {
@@ -2070,7 +2183,8 @@ const server = http.createServer((request, response) => {
   const isInvoiceRequest = requestUrl.pathname === '/api/create-diamonds-invoice';
   const isAdminStatusRequest = requestUrl.pathname === ADMIN_USER_STATUS_PATH;
   const isAdminShopPricingRequest = requestUrl.pathname === ADMIN_SHOP_PRICING_PATH;
-  if (!isInvoiceRequest && !isAdminStatusRequest && !isAdminShopPricingRequest) {
+  const isAdminNpcRequest = requestUrl.pathname === ADMIN_NPC_PATH;
+  if (!isInvoiceRequest && !isAdminStatusRequest && !isAdminShopPricingRequest && !isAdminNpcRequest) {
     response.writeHead(404);
     response.end();
     return;
@@ -2179,6 +2293,100 @@ const server = http.createServer((request, response) => {
         return;
       }
 
+      if (isAdminNpcRequest) {
+        const headerInitData = request.headers['x-telegram-init-data'];
+        const initData = typeof body.initData === 'string' && body.initData.length > 0
+          ? body.initData
+          : headerInitData;
+        const telegramUser = validateTelegramInitData(initData);
+        const action = body.action;
+        if (action === 'begin-match') {
+          const stake = Number(body.stake);
+          if (!Number.isSafeInteger(stake) || ![10, 25].includes(stake)) {
+            throw httpError(400, 'NPC stake must be 10 or 25 coins.');
+          }
+          const game = String(body.game || '');
+          if (!['durak', 'battleship', 'tictactoe'].includes(game)) {
+            throw httpError(400, 'Unknown NPC game.');
+          }
+          sendJson(response, 200, await npcSystem.beginMatch({
+            userId: String(telegramUser.id),
+            npcId: String(body.npcId || ''),
+            stake,
+            game,
+          }));
+          return;
+        }
+        if (action === 'finish-match' || action === 'cancel-match') {
+          const matchId = String(body.matchId || '');
+          if (!/^[\da-f-]{36}$/i.test(matchId)) throw httpError(400, 'Invalid NPC match ID.');
+          const result = action === 'finish-match'
+            ? await npcSystem.finishMatch({
+              matchId,
+              userId: String(telegramUser.id),
+              result: body.result,
+            })
+            : await npcSystem.cancelMatch({
+              matchId,
+              userId: String(telegramUser.id),
+            });
+          sendJson(response, 200, result);
+          return;
+        }
+        if (String(telegramUser.id) !== ADMIN_ID) {
+          throw httpError(403, 'Only the administrator can manage NPCs.');
+        }
+        if (action === 'get') {
+          sendJson(response, 200, {
+            config: await npcSystem.getConfig(),
+            npcs: await npcSystem.listNpcProfiles(50),
+          });
+          return;
+        }
+        if (action === 'config') {
+          const npcConfig = body.config || {};
+          if (npcConfig.count !== undefined &&
+              (!Number.isSafeInteger(Number(npcConfig.count)) ||
+               Number(npcConfig.count) < 5 || Number(npcConfig.count) > 40)) {
+            throw httpError(400, 'NPC count must be between 5 and 40.');
+          }
+          if (npcConfig.maxActiveRooms !== undefined &&
+              (!Number.isSafeInteger(Number(npcConfig.maxActiveRooms)) ||
+               Number(npcConfig.maxActiveRooms) < 1 || Number(npcConfig.maxActiveRooms) > 10)) {
+            throw httpError(400, 'Maximum active NPC rooms must be between 1 and 10.');
+          }
+          sendJson(response, 200, { config: await npcSystem.setConfig(npcConfig) });
+          return;
+        }
+        if (action === 'generate') {
+          const count = Number(body.count);
+          if (!Number.isSafeInteger(count) || count < 5 || count > 40) {
+            throw httpError(400, 'NPC count must be between 5 and 40.');
+          }
+          const currentConfig = await npcSystem.getConfig();
+          if (currentConfig.activeRooms > 0) {
+            throw httpError(409, 'Wait for active NPC games to finish before regenerating profiles.');
+          }
+          const config = await npcSystem.setConfig({ count });
+          await npcSystem.ensureNpcProfiles(count, { regenerate: true });
+          sendJson(response, 200, {
+            config,
+            npcs: await npcSystem.listNpcProfiles(50),
+          });
+          return;
+        }
+        if (action === 'upsert') {
+          sendJson(response, 200, { npc: await npcSystem.upsertNpc(body.id, body.npc || {}) });
+          return;
+        }
+        if (action === 'delete') {
+          await npcSystem.deleteNpc(String(body.id || ''));
+          sendJson(response, 200, { deleted: body.id });
+          return;
+        }
+        throw httpError(400, 'Unknown NPC action.');
+      }
+
       const userId = String(body.userId ?? '');
       const packageId = String(body.packageId ?? '');
       if (!/^\d{1,20}$/.test(userId) || !Number.isSafeInteger(Number(userId))) {
@@ -2210,6 +2418,11 @@ const server = http.createServer((request, response) => {
 server.listen(process.env.PORT || 3000);
 
 async function startBot() {
+  await npcSystem.initialize();
+  setInterval(() => {
+    void announceNpcGameResults().catch((error) =>
+      console.error('Failed to announce NPC coin results:', error));
+  }, 60_000);
   await bot.api.deleteWebhook({ drop_pending_updates: true });
   await bot.init();
   await configureCommandMenus();

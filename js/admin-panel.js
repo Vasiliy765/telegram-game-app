@@ -2,6 +2,7 @@
   const ADMIN_ID = '7784142934';
   const ADMIN_API_URL = 'https://telegram-game-app.onrender.com/api/admin/user-status';
   const ADMIN_SHOP_PRICING_API_URL = 'https://telegram-game-app.onrender.com/api/admin/shop-pricing';
+  const ADMIN_NPC_API_URL = 'https://telegram-game-app.onrender.com/api/admin/npc';
   const DEFAULT_SHOP_PRICING = window.DEFAULT_SHOP_PRICING;
   const SHOP_PRICING_FIELDS = [
     { key: 'stars10', label: '10 💎 =', currency: '⭐' },
@@ -63,7 +64,17 @@
         `<label style="display:grid;gap:5px;font-size:12px;color:#d4d4d8">${label}<span style="display:flex;align-items:center;gap:6px"><input id="sa-price-${key}" type="number" min="1" step="1" inputmode="numeric" style="width:100%;box-sizing:border-box;background:#0f0f13;border:1px solid #333;border-radius:8px;padding:9px;color:#fff"><span>${currency}</span></span></label>`
       ).join('') +
       '</div><button id="sa-save-prices" type="button" style="width:100%;margin-top:10px;background:#16a34a;color:#fff;border:none;border-radius:9px;padding:11px;font-weight:800">💾 Зберегти ціни</button>' +
-      '<div id="sa-pricing-status" role="status" aria-live="polite" style="min-height:16px;margin-top:8px;font-size:12px;color:#a1a1aa"></div></section></div>';
+      '<div id="sa-pricing-status" role="status" aria-live="polite" style="min-height:16px;margin-top:8px;font-size:12px;color:#a1a1aa"></div></section>' +
+      '<section style="margin-top:16px;padding-top:14px;border-top:1px solid #333"><b style="display:block;margin-bottom:10px">🤖 Віртуальні гравці (NPC)</b>' +
+      '<label style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:12px"><span>🤖 NPC увімкнено / вимкнено</span><input id="sa-npc-enabled" type="checkbox"></label>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+      '<label style="display:grid;gap:5px;font-size:12px">Кількість NPC<input id="sa-npc-count" type="number" min="5" max="40" style="background:#0f0f13;border:1px solid #333;border-radius:8px;padding:9px;color:#fff"></label>' +
+      '<label style="display:grid;gap:5px;font-size:12px">Макс. активних столів<input id="sa-npc-rooms" type="number" min="1" max="10" style="background:#0f0f13;border:1px solid #333;border-radius:8px;padding:9px;color:#fff"></label>' +
+      '</div><button id="sa-save-npc" type="button" style="width:100%;margin-top:10px;background:#7c3aed;color:#fff;border:none;border-radius:9px;padding:11px;font-weight:800">Зберегти налаштування NPC</button>' +
+      '<button id="sa-generate-npc" type="button" style="width:100%;margin-top:8px;background:#2563eb;color:#fff;border:none;border-radius:9px;padding:10px;font-weight:800">🔄 Перегенерувати / Оновити NPC</button>' +
+      '<button id="sa-add-npc" type="button" style="width:100%;margin-top:8px;background:#16a34a;color:#fff;border:none;border-radius:9px;padding:10px;font-weight:800">Додати NPC</button>' +
+      '<div id="sa-npc-status" role="status" aria-live="polite" style="min-height:16px;margin-top:8px;font-size:12px;color:#a1a1aa"></div>' +
+      '<div id="sa-npc-list" style="display:grid;gap:6px;margin-top:8px"></div></section></div>';
     document.body.appendChild(ov);
 
     let sel = null;
@@ -137,6 +148,130 @@
     }
 
     pricingSaveButton.addEventListener('click', () => { void saveShopPricing(); });
+    const npcStatus = ov.querySelector('#sa-npc-status');
+    const npcList = ov.querySelector('#sa-npc-list');
+
+    async function npcRequest(action, extra = {}) {
+      const initData = window.Telegram?.WebApp?.initData;
+      if (!initData) throw new Error('Не вдалося перевірити Telegram-акаунт адміністратора.');
+      const response = await fetch(ADMIN_NPC_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData, action, ...extra }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Не вдалося виконати дію NPC.');
+      return result;
+    }
+
+    async function loadNpcs() {
+      npcStatus.textContent = 'Завантаження NPC…';
+      try {
+        const result = await npcRequest('get');
+        ov.querySelector('#sa-npc-enabled').checked = result.config.enabled;
+        ov.querySelector('#sa-npc-count').value = String(result.config.count);
+        ov.querySelector('#sa-npc-rooms').value = String(result.config.maxActiveRooms);
+        npcList.replaceChildren();
+        for (const npc of result.npcs) {
+          const row = document.createElement('div');
+          row.style.cssText = 'display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;background:#0f0f13;border-radius:8px;padding:8px';
+          const info = document.createElement('span');
+          info.textContent = `${npc.avatar || '🤖'} ${npc.name || npc.id} · ${npc.personality || 'rookie'} · ${npc.difficulty || 'easy'} · ${npc.balance || 0} 🪙`;
+          const edit = document.createElement('button');
+          edit.textContent = 'Змінити';
+          edit.style.cssText = 'border:none;border-radius:7px;padding:7px;background:#27272a;color:#fff';
+          edit.addEventListener('click', async () => {
+            const name = window.prompt('Ім’я NPC', npc.name || '');
+            if (name == null) return;
+            const avatar = window.prompt('Аватарка (emoji або URL)', npc.avatar || '🤖');
+            if (avatar == null) return;
+            const personality = window.prompt('Характер: aggressive, cautious, gambler, experienced, rookie', npc.personality || 'rookie');
+            if (personality == null) return;
+            const difficulty = window.prompt('Складність: easy, medium, hard', npc.difficulty || 'easy');
+            if (difficulty == null) return;
+            const balanceInput = window.prompt('Баланс NPC (ціле число)', String(npc.balance || 150));
+            if (balanceInput == null) return;
+            const balance = Number(balanceInput);
+            if (!Number.isSafeInteger(balance) || balance < 150 || balance > 4500) {
+              npcStatus.textContent = 'Баланс NPC має бути цілим числом від 150 до 4500.';
+              return;
+            }
+            try {
+              await npcRequest('upsert', { id: npc.id, npc: { name, avatar, personality, difficulty, balance } });
+              npcStatus.textContent = '✅ NPC оновлено.';
+              await loadNpcs();
+            } catch (error) {
+              npcStatus.textContent = error.message;
+            }
+          });
+          const remove = document.createElement('button');
+          remove.textContent = 'Видалити';
+          remove.style.cssText = 'border:none;border-radius:7px;padding:7px;background:#7f1d1d;color:#fff';
+          remove.addEventListener('click', async () => {
+            if (!window.confirm(`Видалити ${npc.name || npc.id}?`)) return;
+            try {
+              await npcRequest('delete', { id: npc.id });
+              npcStatus.textContent = '✅ NPC видалено.';
+              await loadNpcs();
+            } catch (error) {
+              npcStatus.textContent = error.message;
+            }
+          });
+          row.append(info, edit, remove);
+          npcList.appendChild(row);
+        }
+        npcStatus.textContent = `NPC завантажено: ${result.npcs.length}`;
+      } catch (error) {
+        npcStatus.textContent = error.message;
+      }
+    }
+
+    ov.querySelector('#sa-save-npc').addEventListener('click', async () => {
+      try {
+        const result = await npcRequest('config', {
+          config: {
+            enabled: ov.querySelector('#sa-npc-enabled').checked,
+            count: Number(ov.querySelector('#sa-npc-count').value),
+            maxActiveRooms: Number(ov.querySelector('#sa-npc-rooms').value),
+          },
+        });
+        npcStatus.textContent = '✅ Налаштування NPC збережено.';
+        await loadNpcs();
+      } catch (error) {
+        npcStatus.textContent = error.message;
+      }
+    });
+    ov.querySelector('#sa-generate-npc').addEventListener('click', async () => {
+      const count = Number(ov.querySelector('#sa-npc-count').value);
+      if (!Number.isSafeInteger(count) || count < 5 || count > 40) {
+        npcStatus.textContent = 'Кількість NPC має бути від 5 до 40.';
+        return;
+      }
+      if (!window.confirm(`Перегенерувати ${count} NPC? Поточні профілі та статистика будуть замінені.`)) return;
+      try {
+        await npcRequest('generate', { count });
+        npcStatus.textContent = '✅ NPC перегенеровано.';
+        await loadNpcs();
+      } catch (error) {
+        npcStatus.textContent = error.message;
+      }
+    });
+    ov.querySelector('#sa-add-npc').addEventListener('click', async () => {
+      const name = window.prompt('Ім’я нового NPC', 'Агент Новий');
+      if (!name) return;
+      const avatar = window.prompt('Аватарка (emoji або URL)', '🤖') || '🤖';
+      const personality = window.prompt(
+        'Характер: aggressive, cautious, gambler, experienced, rookie',
+        'rookie',
+      ) || 'rookie';
+      try {
+        await npcRequest('upsert', { npc: { name, avatar, personality } });
+        npcStatus.textContent = '✅ NPC додано.';
+        await loadNpcs();
+      } catch (error) {
+        npcStatus.textContent = error.message;
+      }
+    });
     const draw = () => {
       card.style.display = sel ? 'block' : 'none';
       if (!sel) return;
@@ -288,6 +423,7 @@
       ov.style.display = 'flex';
       if (!pricingDirty) setPricingInputs();
       void chips();
+      void loadNpcs();
     };
     profileBtn.onclick = openPanel;
     ov.querySelector('#sa-x').onclick = () => ov.style.display = 'none';

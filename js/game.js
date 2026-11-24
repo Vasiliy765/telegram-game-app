@@ -136,6 +136,7 @@
 
   const publicRoomMounts = new WeakMap();
   const PUBLIC_ROOM_MAX_AGE_MS = 30 * 60 * 1000;
+  let latestLeaderboardSnapshot = null;
 
   window.PublicRooms = {
     mount(container, onJoin, gameFilter) {
@@ -157,6 +158,7 @@
       const mountState = { unsubscribers: [], refreshInterval: null };
       publicRoomMounts.set(container, mountState);
       let rooms = [];
+      let virtualRooms = [];
       container.replaceChildren();
 
       function render() {
@@ -169,8 +171,13 @@
             room.createdAt > 0 &&
             now - room.createdAt <= PUBLIC_ROOM_MAX_AGE_MS)
           .sort((left, right) => (Number(right.createdAt) || 0) - (Number(left.createdAt) || 0));
+        if (visibleRooms.length) virtualRooms = [];
+        else if (!virtualRooms.length) {
+          virtualRooms = window.NpcSystem?.virtualRooms?.(gameFilter) || [];
+        }
+        const displayedRooms = visibleRooms.length ? visibleRooms : virtualRooms;
         container.replaceChildren();
-        if (!visibleRooms.length) {
+        if (!displayedRooms.length) {
           const empty = document.createElement('p');
           empty.className = 'public-room-empty';
           empty.textContent = 'Немає відкритих столів';
@@ -178,23 +185,28 @@
           return;
         }
 
-        visibleRooms.forEach((room) => {
+        displayedRooms.forEach((room) => {
           const card = document.createElement('article');
           card.className = 'public-room-card';
           const info = document.createElement('div');
           info.className = 'public-room-info';
           const title = document.createElement('strong');
-          title.textContent = `${room.gameTitle} · ${room.hostName || 'Гравець'}`;
+          title.textContent = room.isNpc
+            ? `${room.gameTitle || ({ durak: 'Дурак', battleship: 'Морський бій', tictactoe: 'Хрестики-нулики' })[room.game]} · ${room.hostName}`
+            : `${room.gameTitle} · ${room.hostName || 'Гравець'}`;
           const details = document.createElement('span');
-          details.textContent = `${room.mode} · 🪙 ${room.stake} · ${room.playerCount}/${room.capacity} гравців`;
+          const npcPersonality = room.isNpc
+            ? ` · 🤖 Віртуальний • ${window.NpcSystem?.personalityLabel?.(room.npc?.personality) || 'NPC'}`
+            : '';
+          details.textContent = `${room.mode} · 🪙 ${room.stake} · ${room.playerCount}/${room.capacity} гравців${npcPersonality}`;
           info.append(title, details);
           const button = document.createElement('button');
           button.type = 'button';
           button.className = 'public-room-join';
-          button.textContent = 'Увійти';
+          button.textContent = room.isNpc ? 'Приєднатися до столу' : 'Увійти';
           button.disabled = room.playerCount >= room.capacity;
           button.addEventListener('click', () => {
-            Promise.resolve(onJoin(room.game, room.roomCode)).catch((error) => {
+            Promise.resolve(onJoin(room.game, room.roomCode, room)).catch((error) => {
               console.error('Unable to open a public room', error);
               window.TWA?.toast?.(error.message || 'Не вдалося відкрити стіл.');
             });
@@ -251,6 +263,14 @@
             });
           mountState.unsubscribers.push(unsubscribe);
           mountState.refreshInterval = setInterval(render, 15_000);
+          const onNpcChange = () => {
+            virtualRooms = [];
+            render();
+          };
+          window.addEventListener('npcdatachange', onNpcChange);
+          mountState.unsubscribers.push(() => window.removeEventListener('npcdatachange', onNpcChange));
+          await window.NpcSystem?.load?.();
+          render();
         } catch (error) {
           console.error('Unable to subscribe to public rooms', error);
           if (publicRoomMounts.get(container) === mountState) {
@@ -267,6 +287,36 @@
         publicRoomMounts.delete(container);
       };
     },
+  };
+
+  window.startNpcRoom = async function startNpcRoom(room) {
+    let match = null;
+    try {
+      match = await window.NpcSystem.beginMatch(room);
+      if (match.kind !== 'started') {
+        const messages = {
+          disabled: 'Віртуальні гравці наразі вимкнені.',
+          busy: 'Усі віртуальні столи зараз зайняті.',
+          insufficient: 'У цього NPC недостатньо монет для ставки.',
+          'missing-npc': 'Цей NPC більше не доступний.',
+        };
+        throw new Error(messages[match.kind] || 'Не вдалося створити стіл NPC.');
+      }
+      const options = { npc: match.npc, stake: room.stake, matchId: match.matchId };
+      if (room.game === 'durak') window.DurakMultiplayer.startNpcGame(options);
+      else if (room.game === 'battleship') window.Battleship.startNpcGame(options);
+      else if (room.game === 'tictactoe') window.TicTacToe.startNpcGame(options);
+      else throw new Error('Ця гра поки не підтримує NPC-столи.');
+    } catch (error) {
+      if (match?.matchId) {
+        try {
+          await window.NpcSystem.cancelMatch(match.matchId);
+        } catch (cancelError) {
+          console.error('Unable to release a reserved NPC stake.', cancelError);
+        }
+      }
+      throw error;
+    }
   };
 
   function getCurrentPlayerProfile() {
@@ -335,10 +385,13 @@
     if (!element) return;
     const name = typeof player?.name === 'string' ? player.name.trim() : '';
     const isVip = Number(player?.vipUntil || 0) > Date.now();
-    const initial = fallback || name.charAt(0).toUpperCase() || '👤';
+    const npcAvatar = typeof player?.avatar === 'string' ? player.avatar : '';
+    const initial = fallback || npcAvatar || name.charAt(0).toUpperCase() || '👤';
     const photoUrl = typeof player?.photoUrl === 'string'
       ? player.photoUrl
-      : typeof player?.photo_url === 'string' ? player.photo_url : '';
+      : typeof player?.photo_url === 'string'
+        ? player.photo_url
+        : /^https:\/\//i.test(npcAvatar) ? npcAvatar : '';
     element.textContent = initial;
     element.classList.toggle('vip-player-avatar', isVip);
     if (player?.telegramId) element.dataset.telegramId = String(player.telegramId);
@@ -748,6 +801,7 @@
   }
 
   function renderLeaderboard(snapshot) {
+    latestLeaderboardSnapshot = snapshot;
     const list = document.getElementById('leaderboard-list');
     if (!list) return;
 
@@ -756,11 +810,36 @@
         const player = document.data();
         const balance = Number(player?.balance);
         const roundedBalance = Math.round(balance);
-        if (!isValidCurrencyBalance(roundedBalance)) return null;
+        if (player?.isNpc === true || !isValidCurrencyBalance(roundedBalance)) return null;
         return { ...player, firebaseId: document.id, balance: roundedBalance };
       })
       .filter(Boolean);
-    entries.sort((a, b) => b.balance - a.balance);
+    if (window.NpcSystem?.config?.enabled) {
+      entries.push(...window.NpcSystem.profiles
+        .filter((npc) => npc.isNpc === true && npc.enabled !== false)
+        .map((npc) => {
+          const balance = Math.round(Number(npc.balance));
+          return isValidCurrencyBalance(balance)
+            ? { ...npc, firebaseId: npc.id, balance }
+            : null;
+        })
+        .filter(Boolean));
+    }
+    entries.sort((a, b) => b.balance - a.balance ||
+      String(a.firebaseId).localeCompare(String(b.firebaseId)));
+    const telegramUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+    let remainingMessage = '';
+    if (telegramUser?.id != null) {
+      const callerId = String(telegramUser.id);
+      const callerIndex = entries.findIndex((player) =>
+        String(player.telegramId || player.firebaseId) === callerId);
+      if (callerIndex >= 50) {
+        remainingMessage = `🎯 До ТОП-50 залишилося ${callerIndex - 49} позицій`;
+      } else if (callerIndex >= 0) {
+        remainingMessage = '✅ Ви вже в ТОП-50.';
+      }
+    }
+    entries.splice(50);
     list.replaceChildren();
 
     if (!entries.length) {
@@ -783,7 +862,14 @@
       details.className = 'leaderboard-details';
       const isVip = Number(player.vipUntil || 0) > Date.now();
       const name = document.createElement('strong');
-      name.textContent = isVip ? `👑 ${player.name || 'Гравець'}` : player.name || 'Гравець';
+      name.textContent = isVip
+        ? `👑 ${player.name || 'Гравець'}`
+        : player.name || 'Гравець';
+      if (player.isNpc) name.textContent += ' ';
+      const npcBadge = document.createElement('span');
+      npcBadge.className = 'npc-name-badge';
+      npcBadge.textContent = '🤖 Віртуальний';
+      npcBadge.hidden = !player.isNpc;
       const vipBadge = document.createElement('span');
       vipBadge.className = 'vip-name-badge';
       vipBadge.textContent = 'VIP';
@@ -796,8 +882,12 @@
         player.username,
         player.telegramId ? `ID ${player.telegramId}` : '',
       ].filter(Boolean).join(' · ');
+      const stats = document.createElement('small');
+      stats.textContent = `Перемоги ${Math.round(Number(player.wins) || 0)} · `
+        + `Поразки ${Math.round(Number(player.losses) || 0)} · `
+        + `Рейтинг ${Math.round(Number(player.rating) || 1000)}`;
       if (player.telegramId) row.dataset.telegramId = String(player.telegramId);
-      details.append(name, vipBadge, agentRank, identifier);
+      details.append(name, npcBadge, vipBadge, agentRank, identifier, stats);
       const balance = document.createElement('strong');
       balance.className = 'leaderboard-balance';
       balance.textContent = `🪙 ${player.balance}`;
@@ -805,6 +895,12 @@
       list.appendChild(row);
       window.renderPlayerAvatar(avatar, player);
     });
+    if (remainingMessage) {
+      const remaining = document.createElement('p');
+      remaining.className = 'leaderboard-message';
+      remaining.textContent = remainingMessage;
+      list.appendChild(remaining);
+    }
     if (leaderboardVipExpiryTimer) clearTimeout(leaderboardVipExpiryTimer);
     const nextVipExpiry = entries.reduce((nearest, player) => {
       const vipUntil = Number(player.vipUntil || 0);
@@ -817,6 +913,10 @@
       );
     }
   }
+
+  window.addEventListener('npcdatachange', () => {
+    if (latestLeaderboardSnapshot) renderLeaderboard(latestLeaderboardSnapshot);
+  });
 
   function setLeaderboardMessage(message) {
     const list = document.getElementById('leaderboard-list');
@@ -889,6 +989,8 @@
 
     if (!window.firebase.apps.length) window.firebase.initializeApp(window.FIREBASE_CONFIG);
     await getFirebaseUser();
+    void window.NpcSystem?.load?.().catch((error) =>
+      console.error('Unable to load NPC profiles for the leaderboard.', error));
     const firestore = window.firebase.firestore();
     firestore.collection('config').doc('shop').onSnapshot((snapshot) => {
       applyShopPricing(snapshot.exists ? snapshot.data() : DEFAULT_SHOP_PRICING);

@@ -75,7 +75,8 @@ service cloud.firestore {
       return profile.keys().hasOnly([
           'id', 'name', 'username', 'balance', 'telegramId', 'photoUrl', 'updatedAt',
           'diamonds', 'lastSalaryAt', 'ownedSkins', 'activeSkin', 'vipUntil', 'banned',
-          'upgrades', 'lastNetworkClaim'
+          'upgrades', 'lastNetworkClaim', 'isNpc', 'npcEnabled', 'personality',
+          'difficulty', 'avatarEmoji', 'wins', 'losses', 'draws', 'rating', 'deleted'
         ]) &&
         (profile.get('id', 0) is int || profile.get('id', '') is string) &&
         profile.get('name', '') is string &&
@@ -123,8 +124,13 @@ service cloud.firestore {
     }
 
     match /config/{configId} {
-      allow get: if signedIn() && configId == 'shop';
+      allow get: if signedIn() && (configId == 'shop' || configId == 'npc');
       allow list, write: if false;
+    }
+
+    match /npcs/{npcId} {
+      allow get, list: if signedIn();
+      allow create, update, delete: if false;
     }
 
     match /players/{uid} {

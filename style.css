@@ -2043,7 +2043,8 @@ body.tictactoe-active #view-tictactoe.active {
 }
 
 .header-vip-badge,
-.vip-name-badge {
+.vip-name-badge,
+.npc-name-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2061,7 +2062,8 @@ body.tictactoe-active #view-tictactoe.active {
 }
 
 .header-vip-badge[hidden],
-.vip-name-badge[hidden] {
+.vip-name-badge[hidden],
+.npc-name-badge[hidden] {
   display: none;
 }
 
@@ -2069,6 +2071,16 @@ body.tictactoe-active #view-tictactoe.active {
   width: fit-content;
   padding: 1px 5px;
   font-size: 9px;
+}
+
+.npc-name-badge {
+  width: fit-content;
+  padding: 1px 5px;
+  border-color: rgba(96, 165, 250, 0.4);
+  background: rgba(30, 58, 138, 0.25);
+  color: #bfdbfe;
+  font-size: 9px;
+  line-height: 1.4;
 }
 
 .vip-player-avatar {

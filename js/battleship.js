@@ -71,7 +71,24 @@ window.Battleship = (() => {
     if (roomCode) void joinOnlineRoom(roomCode);
   }
 
+  function startNpcGame({npc,stake,matchId}){
+    init();
+    state.mode='bot';
+    state.stake=stake;
+    state.npc={...npc,isNpc:true,isBot:true};
+    state.npcMatchId=matchId;
+    state.npcResultReported=false;
+    state.matchId=matchId;
+    state.wagerStarted=false;
+    startPlacement();
+  }
+
   function leave() {
+    if(state.npcMatchId&&!state.npcResultReported){
+      state.npcResultReported=true;
+      if(state.wagerStarted)window.NpcSystem?.reportResult?.(state.npcMatchId,'loss');
+      else void window.NpcSystem?.cancelMatch?.(state.npcMatchId);
+    }
     clearInterval(state.interval);
     clearInterval(state.setupInterval);
     if(state.online?.db&&state.online.unsubscribe){
@@ -119,7 +136,9 @@ window.Battleship = (() => {
     </div>`;
     publicRoomsUnmount=window.PublicRooms?.mount(
       root().querySelector('#bs-open-room-list'),
-      (game,roomCode)=>window.openPublicRoom(game,roomCode),
+      (game,roomCode,room)=>room?.isNpc
+        ?window.startNpcRoom(room)
+        :window.openPublicRoom(game,roomCode),
       'battleship'
     )||null;
     document.getElementById('bs-back').onclick=leave;
@@ -977,6 +996,13 @@ window.Battleship = (() => {
   }
 
   function botPick(){
+    const easyNpc=state.npc&&(state.npc.difficulty==='easy'||state.npc.personality==='rookie');
+    const gambler=state.npc?.personality==='gambler';
+    if((easyNpc&&Math.random()<0.75)||(gambler&&Math.random()<0.55)){
+      const unknown=[];
+      for(let i=0;i<N*N;i++)if(!state.playerResults[i])unknown.push(i);
+      return unknown[Math.floor(Math.random()*unknown.length)];
+    }
     while(state.botTargets.length){
       const i=state.botTargets.shift();
       if(!state.playerResults[i])return i;
@@ -1057,12 +1083,13 @@ window.Battleship = (() => {
     const accuracy=state.playerStats.shots?Math.round(state.playerStats.hits/state.playerStats.shots*100):0;
     const enemyPlayer=state.mode==='online'
       ? Object.values(state.online?.roomData?.players||{}).find(player=>String(player.id)!==String(state.online.uid))
-      : null;
-    const opponentName=state.mode==='bot'?'Abayazhka':state.mode==='local'?'Гравець 2':enemyPlayer?.name||'Суперник';
+      : state.npc||null;
+    const opponentName=state.mode==='bot'?(state.npc?.name||'Abayazhka'):state.mode==='local'?'Гравець 2':enemyPlayer?.name||'Суперник';
+    const npcBadge=state.npc?`<small class="npc-name-badge">🤖 Віртуальний • ${escapeHtml(window.NpcSystem?.personalityLabel?.(state.npc.personality)||'NPC')}</small>`:'';
     const ownPlayer=playerIdentity();
     root().innerHTML=`<div class="bs-screen bs-battle">
       <header class="bs-battle-head"><button class="bs-battle-close" id="bs-battle-close">×</button><button class="bs-turn-capsule ${state.turn==='player'?'':'enemy'}" type="button">${state.turn==='player'?'Твій хід':'Хід суперника'} <span id="bs-turn-timer">${state.timerSeconds}s</span></button><button class="bs-sound" id="bs-sound" type="button">${state.sound?'🔊':'♪'}</button></header>
-      <div class="bs-opponent"><span class="bs-heart">♡</span><span class="bs-opponent-avatar" id="bs-opponent-avatar"></span><div class="bs-opponent-name"><strong>${escapeHtml(opponentName)}</strong>${agentRankMarkup(enemyPlayer)}</div><b>Ворожих кораблів: ${enemyCount}</b></div>
+      <div class="bs-opponent"><span class="bs-heart">♡</span><span class="bs-opponent-avatar" id="bs-opponent-avatar"></span><div class="bs-opponent-name"><strong>${escapeHtml(opponentName)}</strong>${npcBadge}${agentRankMarkup(enemyPlayer)}</div><b>Ворожих кораблів: ${enemyCount}</b></div>
       <div class="bs-enemy-board">${boardHtml('enemy')}</div>
       <button class="bs-fire ${state.target!=null?'ready':''}" id="bs-fire" ${state.target==null?'disabled':''} type="button">${state.target==null?'Обери ціль':'Вогонь · '+coord(state.target)}</button>
       <div class="bs-own-card"><div class="bs-own-identity"><span class="bs-own-avatar" id="bs-own-avatar"></span><div class="bs-own-name"><b>${escapeHtml(ownPlayer.name||'Гравець')}</b>${agentRankMarkup(ownPlayer)}<small>ТВОЄ ПОЛЕ</small></div></div><div class="bs-mini-board">${boardHtml('own')}</div><div class="bs-stats"><div><span>Постріли</span><strong>${state.playerStats.shots}</strong></div><div><span>Влучання</span><strong class="red">${state.playerStats.hits}</strong></div><div><span>Точність</span><strong class="cyan">${accuracy}%</strong></div><div><span>Потоплено</span><strong>${state.playerStats.sunk}</strong></div></div></div>
@@ -1086,6 +1113,10 @@ window.Battleship = (() => {
     clearInterval(state.interval);state.screen='final';
     const payout=Math.round(win?state.stake*2:0);
     if(state.wagerId&&window.settleUserWager)window.settleUserWager(state.wagerId,payout,{online:state.mode==='online'});
+    if(state.npcMatchId&&!state.npcResultReported){
+      state.npcResultReported=true;
+      window.NpcSystem?.reportResult?.(state.npcMatchId,win?'win':'loss');
+    }
     state.payout=payout;
     renderFinal(win);
   }
@@ -1121,6 +1152,10 @@ window.Battleship = (() => {
       <button class="bs-rematch" id="bs-rematch">Реванш</button><button class="bs-new-table" id="bs-new-table">Новий стіл</button></div>
     </div>`;
     document.getElementById('bs-rematch').onclick=()=>{
+      if(state.npc){
+        void window.startNpcRoom({game:'battleship',npc:state.npc,stake:state.stake,isNpc:true});
+        return;
+      }
       if(state.online){
         void resetOnlineRoomForRematch();
         return;
@@ -1194,5 +1229,5 @@ window.Battleship = (() => {
     }
   }
 
-  return {init,joinRoom:joinOnlineRoom};
+  return {init,joinRoom:joinOnlineRoom,startNpcGame};
 })();

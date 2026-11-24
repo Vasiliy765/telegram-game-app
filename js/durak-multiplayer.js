@@ -126,6 +126,12 @@ window.DurakMultiplayer = (() => {
       badge.textContent = 'VIP';
       element.appendChild(badge);
     }
+    if (player.isNpc) {
+      const badge = document.createElement('small');
+      badge.className = 'npc-name-badge';
+      badge.textContent = `🤖 Віртуальний • ${window.NpcSystem?.personalityLabel?.(player.personality) || 'NPC'}`;
+      element.appendChild(badge);
+    }
     if (!player.isBot) {
       const rank = document.createElement('small');
       rank.className = 'agent-rank-title';
@@ -259,8 +265,17 @@ window.DurakMultiplayer = (() => {
     return game.players.findIndex((player, index) =>
       player.isBot &&
       index !== game.defenderIndex &&
-      player.hand.some((card) => canPlayerPlay(card, index))
+      player.hand.some((card) => canPlayerPlay(card, index)) &&
+      shouldBotToss(player)
     );
+  }
+
+  function shouldBotToss(player) {
+    if (player.personality === 'aggressive') return Math.random() < 0.9;
+    if (player.personality === 'gambler') return Math.random() < 0.7;
+    if (player.personality === 'cautious') return Math.random() < 0.18;
+    if (player.personality === 'rookie') return Math.random() < 0.35;
+    return Math.random() < 0.55;
   }
 
   function allAttackersPassed() {
@@ -537,6 +552,12 @@ window.DurakMultiplayer = (() => {
     if (game.matchId && window.settleUserWager) {
       window.settleUserWager(game.matchId, Math.max(0, localChange), { online: game.isOnline });
     }
+    if (game.npcMatchId && !game.npcResultReported) {
+      game.npcResultReported = true;
+      const localResult = !loser ? 'draw'
+        : samePlayerId(localPlayer.id, loser.id) ? 'loss' : 'win';
+      window.NpcSystem?.reportResult?.(game.npcMatchId, localResult);
+    }
 
     title.textContent = !loser
       ? 'Нічия'
@@ -671,6 +692,36 @@ window.DurakMultiplayer = (() => {
     setMessage(`${game.players[playerIndex].name} підкинув карту.`);
   }
 
+  function botAttackCardIndex(player) {
+    const candidates = player.hand
+      .map((card, index) => ({ card, index }))
+      .filter(({ card }) => canPlayerPlay(card, game.players.indexOf(player)));
+    if (!candidates.length) return -1;
+    if (player.personality === 'aggressive') {
+      candidates.sort((left, right) => C.RANK_VAL[right.card.rank] - C.RANK_VAL[left.card.rank]);
+      return candidates[0].index;
+    }
+    if (player.personality === 'gambler') {
+      return candidates[Math.floor(Math.random() * candidates.length)].index;
+    }
+    candidates.sort((left, right) => C.RANK_VAL[left.card.rank] - C.RANK_VAL[right.card.rank]);
+    return candidates[0].index;
+  }
+
+  function botDefenseCard(attack, player) {
+    const beaters = player.hand.filter((card) => C.beat(attack, card, game.trump.suit));
+    if (!beaters.length) return null;
+    const nonTrumpBeaters = beaters.filter((card) => card.suit !== game.trump.suit);
+    const preferred = player.personality === 'cautious' || player.personality === 'experienced'
+      ? nonTrumpBeaters.length ? nonTrumpBeaters : beaters
+      : beaters;
+    if (player.personality === 'gambler' || player.personality === 'rookie') {
+      return preferred[Math.floor(Math.random() * preferred.length)];
+    }
+    preferred.sort((left, right) => C.RANK_VAL[left.rank] - C.RANK_VAL[right.rank]);
+    return preferred[0];
+  }
+
   function markGameOver() {
     const active = activeIndexes();
     if (active.length > 1) return false;
@@ -755,7 +806,7 @@ window.DurakMultiplayer = (() => {
       const tosserIndex = findBotTosserIndex();
       if (tosserIndex !== -1) {
         const tosser = game.players[tosserIndex];
-        const cardIndex = tosser.hand.findIndex((card) => canPlayerPlay(card, tosserIndex));
+        const cardIndex = botAttackCardIndex(tosser);
         playAttack(tosserIndex, cardIndex);
         publish();
         scheduleBotStep();
@@ -805,7 +856,7 @@ window.DurakMultiplayer = (() => {
       const defender = game.players[game.defenderIndex];
       if (!defender.isBot) return;
 
-      const card = C.cheapestBeater(pair.attack, defender.hand, game.trump.suit);
+      const card = botDefenseCard(pair.attack, defender);
       if (!card) {
         game.isTaking = true;
         resetPasses();
@@ -831,8 +882,8 @@ window.DurakMultiplayer = (() => {
       const attacker = game.players[game.attackerIndex];
       if (!attacker.isBot || attacker.hand.length === 0) return;
 
-      const card = lowestCard(attacker.hand);
-      attacker.hand.splice(attacker.hand.indexOf(card), 1);
+      const cardIndex = botAttackCardIndex(attacker);
+      const card = attacker.hand.splice(cardIndex, 1)[0];
       game.tablePairs.push({
         attack: card,
         defend: null,
@@ -1232,6 +1283,7 @@ window.DurakMultiplayer = (() => {
     hostId = null,
     onAction,
     onRematch,
+    npcMatchId = null,
   } = {}) {
     if (!Array.isArray(players) || players.length < 2 || players.length > 6) {
       throw new Error('Для гри потрібні від 2 до 6 гравців.');
@@ -1271,6 +1323,10 @@ window.DurakMultiplayer = (() => {
       vipUntil: Number(player.vipUntil) || 0,
       agentRank: Number(player.agentRank) || 0,
       isBot: Boolean(player.isBot),
+      isNpc: Boolean(player.isNpc),
+      avatar: player.avatar || '',
+      personality: player.personality || '',
+      difficulty: player.difficulty || '',
       isOut: false,
       status: '',
       hand: [],
@@ -1298,6 +1354,8 @@ window.DurakMultiplayer = (() => {
       mode,
       stake: Number(stake),
       matchId: wagerId,
+      npcMatchId,
+      npcResultReported: false,
       isOnline: Boolean(isOnline),
       onStateChange,
       isHost,
@@ -1377,8 +1435,39 @@ window.DurakMultiplayer = (() => {
     return true;
   }
 
+  function startNpcGame({ npc, stake, matchId }) {
+    const profile = window.getCurrentPlayerProfile?.();
+    if (!profile?.telegramId || !npc?.id || !matchId) {
+      throw new Error('Не вдалося визначити гравців NPC-столу.');
+    }
+    startGame({
+      players: [
+        {
+          ...profile,
+          id: profile.telegramId,
+          name: profile.name,
+        },
+        {
+          id: npc.id,
+          name: npc.name,
+          avatar: npc.avatar,
+          isBot: true,
+          isNpc: true,
+          personality: npc.personality,
+          difficulty: npc.difficulty,
+        },
+      ],
+      localPlayerId: profile.telegramId,
+      stake,
+      matchId,
+      npcMatchId: matchId,
+    });
+    window.showView?.('durak-table');
+  }
+
   return {
     startGame,
+    startNpcGame,
     playCard,
     pass: passRound,
     take: takeCards,

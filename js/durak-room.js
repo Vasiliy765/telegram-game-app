@@ -33,6 +33,8 @@ window.DurakRoom = (() => {
   };
 
   function randomBotName() {
+    const npc = window.NpcSystem?.randomProfile?.();
+    if (npc?.name) return npc.name.replace(/^Агент\s*/, '');
     const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
     const noun = nouns[Math.floor(Math.random() * nouns.length)];
     return `${adjective} ${noun}`;
@@ -961,7 +963,7 @@ window.DurakRoom = (() => {
     }
     const botSeat = {
       id: `bot-${state.slots.indexOf(slot)}`,
-      name: `🤖 ШІ-бот · ${randomBotName()}`,
+      name: `🤖 Віртуальний гравець · ${randomBotName()}`,
       position: state.slots.indexOf(slot),
       isHost: false,
       isReady: true,
@@ -1104,8 +1106,10 @@ window.DurakRoom = (() => {
     publicRoomsUnmount?.();
     const container = $('durak-open-room-list');
     if (container && window.PublicRooms) {
-      publicRoomsUnmount = window.PublicRooms.mount(container, (game, roomCode) =>
-        window.openPublicRoom(game, roomCode), 'durak');
+      publicRoomsUnmount = window.PublicRooms.mount(container, (game, roomCode, room) =>
+        room?.isNpc
+          ? window.startNpcRoom(room)
+          : window.openPublicRoom(game, roomCode), 'durak');
     }
   }
 
