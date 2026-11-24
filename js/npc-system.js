@@ -64,7 +64,7 @@
       isNpc: true,
       npc,
       hostName: npc.name,
-      mode: 'Проти віртуального гравця',
+      mode: 'Швидка гра 1 на 1',
       stake: Math.random() < 0.5 ? 10 : 25,
       playerCount: 1,
       capacity: 2,
@@ -74,20 +74,20 @@
 
   async function request(action, extra = {}) {
     const initData = window.Telegram?.WebApp?.initData;
-    if (!initData) throw new Error('Відкрийте гру через Telegram, щоб зіграти з NPC.');
+    if (!initData) throw new Error('Відкрийте гру через Telegram, щоб знайти суперника.');
     const response = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ initData, action, ...extra }),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Не вдалося виконати дію з NPC.');
+    if (!response.ok) throw new Error(result.error || 'Не вдалося виконати дію.');
     return result;
   }
 
   async function beginMatch(room) {
     if (!room?.npc?.id || !['durak', 'battleship', 'tictactoe'].includes(room.game)) {
-      throw new Error('Некоректний стіл NPC.');
+      throw new Error('Некоректний ігровий стіл.');
     }
     return request('begin-match', {
       npcId: room.npc.id,
@@ -109,7 +109,7 @@
   function reportResult(matchId, result) {
     void finishMatch(matchId, result).then(() => load()).catch((error) => {
       console.error('Unable to settle NPC game statistics.', error);
-      window.TWA?.toast?.('Не вдалося зберегти результат NPC-партії.');
+      window.TWA?.toast?.('Не вдалося зберегти результат партії.');
     });
   }
 

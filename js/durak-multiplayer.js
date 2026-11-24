@@ -126,13 +126,7 @@ window.DurakMultiplayer = (() => {
       badge.textContent = 'VIP';
       element.appendChild(badge);
     }
-    if (player.isNpc) {
-      const badge = document.createElement('small');
-      badge.className = 'npc-name-badge';
-      badge.textContent = `🤖 Віртуальний • ${window.NpcSystem?.personalityLabel?.(player.personality) || 'NPC'}`;
-      element.appendChild(badge);
-    }
-    if (!player.isBot) {
+    if (!player.isBot || player.isNpc) {
       const rank = document.createElement('small');
       rank.className = 'agent-rank-title';
       rank.textContent = window.getAgentRankTitle?.(player.agentRank) || '';
@@ -1315,7 +1309,7 @@ window.DurakMultiplayer = (() => {
     const handSize = Math.min(6, Math.floor((deck.length - 1) / players.length));
     const gamePlayers = players.map((player) => ({
       id: player.id,
-      name: player.name || (samePlayerId(player.id, localPlayerId) ? 'Гравець' : 'Бот'),
+      name: player.name || (samePlayerId(player.id, localPlayerId) ? 'Гравець' : 'Суперник'),
       telegramId: player.telegramId || '',
       username: player.username || '',
       photoUrl: player.photoUrl || '',
@@ -1438,7 +1432,7 @@ window.DurakMultiplayer = (() => {
   function startNpcGame({ npc, stake, matchId }) {
     const profile = window.getCurrentPlayerProfile?.();
     if (!profile?.telegramId || !npc?.id || !matchId) {
-      throw new Error('Не вдалося визначити гравців NPC-столу.');
+      throw new Error('Не вдалося визначити учасників столу.');
     }
     startGame({
       players: [

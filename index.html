@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#0f172a">
   <title>Таємний Клуб</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=43">
+  <link rel="stylesheet" href="style.css?v=45">
 </head>
 <body>
   <div id="app">
@@ -284,7 +284,7 @@
           <div class="room-controls">
             <button class="btn btn-primary btn-full" id="durak-room-join" hidden>Приєднатися до столу</button>
             <button class="btn btn-full btn-ready" id="durak-room-ready">Готово ✅</button>
-            <button class="btn btn-full btn-add-test" id="durak-room-add-test">🤖 + Додати ШІ-бота</button>
+            <button class="btn btn-full btn-add-test" id="durak-room-add-test">Додати суперника</button>
             <button class="btn btn-primary btn-full btn-invite" id="durak-room-invite">Запросити гравців</button>
             <button class="btn btn-full btn-copy" id="durak-room-copy">Скопіювати посилання</button>
             <div class="room-status" id="durak-room-status">Чекаємо готовності · 0/1</div>
@@ -368,11 +368,11 @@
       <section id="view-tictactoe" class="view">
         <div class="game-header"><button class="back-btn" data-view="home">← Назад</button><h2>Хрестики-нулики</h2></div>
         <div class="ttt" id="tictactoe-game">
-          <div class="ttt-score"><span>Ви <span id="ttt-score-you">0</span></span><span>Нічия <span id="ttt-score-draw">0</span></span><span>Бот <span id="ttt-score-bot">0</span></span></div>
+          <div class="ttt-score"><span>Ви <span id="ttt-score-you">0</span></span><span>Нічия <span id="ttt-score-draw">0</span></span><span>Суперник <span id="ttt-score-bot">0</span></span></div>
           <div class="ttt-controls"><label class="diff">Складність: <select id="ttt-difficulty"><option value="easy">Легка</option><option value="medium">Середня</option><option value="hard">Важка (неможлива)</option></select></label><button class="btn btn-primary btn-small" id="ttt-reset">Нова гра</button></div>
           <div class="ttt-status" id="ttt-status">Ваш хід (Х)</div>
           <div class="ttt-board" id="ttt-board"></div>
-          <div class="ttt-hint" id="ttt-hint">Ви граєте Х, бот — О</div>
+          <div class="ttt-hint" id="ttt-hint">Ви граєте Х, суперник — О</div>
         </div>
       </section>
 
@@ -432,7 +432,7 @@
                   <button class="chat-game-copy" type="button" data-copy-chat-command="coin">Копіювати команду</button>
                 </div>
                 <p class="chat-game-rule">Правила</p>
-                <p class="chat-game-description">Якщо відповіси на повідомлення гравця, прийняти або відхилити виклик зможе тільки він. Якщо напишеш команду просто в чат, прийняти її зможе будь-хто. Бот визначить переможця та зарахує виграш; комісія банку — 2%.</p>
+                <p class="chat-game-description">Якщо відповіси на повідомлення гравця, прийняти або відхилити виклик зможе тільки він. Якщо напишеш команду просто в чат, прийняти її зможе будь-хто. Переможця буде визначено автоматично, виграш зарахується одразу; комісія банку — 2%.</p>
               </article>
               <article class="chat-game-card">
                 <header class="chat-game-heading"><span class="chat-game-icon">🎲</span><div><h3>Кубик</h3><p>Дуель на двох кубиках · ставка 10–300 🪙</p></div></header>
@@ -444,7 +444,7 @@
                   <button class="chat-game-copy" type="button" data-copy-chat-command="dice">Копіювати команду</button>
                 </div>
                 <p class="chat-game-rule">Правила</p>
-                <p class="chat-game-description">Після прийняття виклику бот кидає два кубики по черзі: перший — за того, хто запросив, другий — за того, хто прийняв. Бот оголошує переможця; комісія банку — 2%.</p>
+                <p class="chat-game-description">Після прийняття виклику система кидає два кубики по черзі: перший — за того, хто запросив, другий — за того, хто прийняв. Переможця буде оголошено автоматично; комісія банку — 2%.</p>
               </article>
             </div>
           </section>
@@ -571,20 +571,20 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=43"></script>
-    <script src="js/firestore-room-store.js?v=43"></script>
-    <script src="js/twa.js?v=43"></script>
-    <script src="js/game.js?v=43"></script>
-    <script src="js/router.js?v=43"></script>
-    <script src="js/cards.js?v=43"></script>
-    <script src="js/durak.js?v=43"></script>
-    <script src="js/battleship.js?v=43"></script>
-    <script src="js/tictactoe.js?v=43"></script>
-    <script src="js/store.js?v=43"></script>
-    <script src="js/npc-system.js?v=43"></script>
-    <script src="js/durak-room.js?v=43"></script>
-    <script src="js/durak-multiplayer.js?v=43"></script>
-    <script src="js/main.js?v=43"></script>
+    <script src="js/firebase-config.js?v=45"></script>
+    <script src="js/firestore-room-store.js?v=45"></script>
+    <script src="js/twa.js?v=45"></script>
+    <script src="js/game.js?v=45"></script>
+    <script src="js/router.js?v=45"></script>
+    <script src="js/cards.js?v=45"></script>
+    <script src="js/durak.js?v=45"></script>
+    <script src="js/battleship.js?v=45"></script>
+    <script src="js/tictactoe.js?v=45"></script>
+    <script src="js/store.js?v=45"></script>
+    <script src="js/npc-system.js?v=45"></script>
+    <script src="js/durak-room.js?v=45"></script>
+    <script src="js/durak-multiplayer.js?v=45"></script>
+    <script src="js/main.js?v=45"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (window.hasIncomingRoomInvite?.('battleship')) {
@@ -596,7 +596,7 @@
   <div class="account-ban-screen" id="account-ban-screen" hidden role="alert" aria-live="assertive">
     <div class="account-ban-card">⛔ Ваш акаунт заблоковано адміністратором</div>
   </div>
-<script src="js/reactions-sync.js?v=43"></script>
-<script src="js/admin-panel.js?v=43"></script>
+<script src="js/reactions-sync.js?v=45"></script>
+<script src="js/admin-panel.js?v=45"></script>
 </body>
 </html>

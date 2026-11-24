@@ -184,7 +184,7 @@ window.DurakRoom = (() => {
 
       const avatar = document.createElement('div');
       avatar.className = 'avatar-icon';
-      const avatarFallback = slot.isHost ? '👑' : slot.isBot ? '🤖' : slot.isReady ? '✅' : slot.joined ? '👤' : '＋';
+      const avatarFallback = slot.isHost ? '👑' : slot.avatar || (slot.isReady ? '✅' : slot.joined ? '👤' : '＋');
       if (window.renderPlayerAvatar) window.renderPlayerAvatar(avatar, slot, avatarFallback);
       else avatar.textContent = avatarFallback;
       const label = document.createElement('span');
@@ -253,7 +253,7 @@ window.DurakRoom = (() => {
     if (addButton) {
       const hasEmptySlot = state.slots.some((slot) => !slot.joined && !slot.isHost);
       addButton.disabled = state.roomStarted || !state.isHost || !hasEmptySlot;
-      addButton.textContent = hasEmptySlot ? '🤖 + Додати ШІ-бота' : 'Усі місця зайняті';
+      addButton.textContent = hasEmptySlot ? 'Додати суперника' : 'Усі місця зайняті';
       addButton.hidden = !isHost || !hasEmptySlot;
     }
     if (inviteButton) {
@@ -842,7 +842,7 @@ window.DurakRoom = (() => {
     try {
       const backend = await connectFirebase();
       if (!backend) {
-        notify('Онлайн-кімнати потребують налаштованого Firebase. Швидка гра з ботами доступна локально.');
+        notify('Не вдалося підключитися до онлайн-кімнат. Перевірте з’єднання.');
         return false;
       }
       state.db = backend.db;
@@ -961,9 +961,11 @@ window.DurakRoom = (() => {
       notify('Вільних місць немає');
       return;
     }
+    const profile = window.NpcSystem?.randomProfile?.();
     const botSeat = {
       id: `bot-${state.slots.indexOf(slot)}`,
-      name: `🤖 Віртуальний гравець · ${randomBotName()}`,
+      name: profile?.name || randomBotName(),
+      avatar: profile?.avatar || '',
       position: state.slots.indexOf(slot),
       isHost: false,
       isReady: true,

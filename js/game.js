@@ -197,10 +197,7 @@
             ? `${room.gameTitle || ({ durak: 'Дурак', battleship: 'Морський бій', tictactoe: 'Хрестики-нулики' })[room.game]} · ${room.hostName}`
             : `${room.gameTitle} · ${room.hostName || 'Гравець'}`;
           const details = document.createElement('span');
-          const npcPersonality = room.isNpc
-            ? ` · 🤖 Віртуальний • ${window.NpcSystem?.personalityLabel?.(room.npc?.personality) || 'NPC'}`
-            : '';
-          details.textContent = `${room.mode} · 🪙 ${room.stake} · ${room.playerCount}/${room.capacity} гравців${npcPersonality}`;
+          details.textContent = `${room.mode} · 🪙 ${room.stake} · ${room.playerCount}/${room.capacity} гравців`;
           info.append(title, details);
           const button = document.createElement('button');
           button.type = 'button';
@@ -297,18 +294,18 @@
       match = await window.NpcSystem.beginMatch(room);
       if (match.kind !== 'started') {
         const messages = {
-          disabled: 'Віртуальні гравці наразі вимкнені.',
-          busy: 'Усі віртуальні столи зараз зайняті.',
-          insufficient: 'У цього NPC недостатньо монет для ставки.',
-          'missing-npc': 'Цей NPC більше не доступний.',
+          disabled: 'Швидка гра наразі недоступна.',
+          busy: 'Зараз немає вільного столу. Спробуйте трохи пізніше.',
+          insufficient: 'У суперника недостатньо монет для ставки.',
+          'missing-npc': 'Суперник більше недоступний.',
         };
-        throw new Error(messages[match.kind] || 'Не вдалося створити стіл NPC.');
+        throw new Error(messages[match.kind] || 'Не вдалося створити стіл.');
       }
       const options = { npc: match.npc, stake: room.stake, matchId: match.matchId };
       if (room.game === 'durak') window.DurakMultiplayer.startNpcGame(options);
       else if (room.game === 'battleship') window.Battleship.startNpcGame(options);
       else if (room.game === 'tictactoe') window.TicTacToe.startNpcGame(options);
-      else throw new Error('Ця гра поки не підтримує NPC-столи.');
+      else throw new Error('Ця гра поки не підтримує швидкі столи.');
     } catch (error) {
       if (match?.matchId) {
         try {
@@ -945,11 +942,6 @@
       name.textContent = isVip
         ? `👑 ${player.name || 'Гравець'}`
         : player.name || 'Гравець';
-      if (player.isNpc) name.textContent += ' ';
-      const npcBadge = document.createElement('span');
-      npcBadge.className = 'npc-name-badge';
-      npcBadge.textContent = '🤖 Віртуальний';
-      npcBadge.hidden = !player.isNpc;
       const vipBadge = document.createElement('span');
       vipBadge.className = 'vip-name-badge';
       vipBadge.textContent = 'VIP';
@@ -967,7 +959,7 @@
         + `Поразки ${Math.round(Number(player.losses) || 0)} · `
         + `Рейтинг ${Math.round(Number(player.rating) || 1000)}`;
       if (player.telegramId) row.dataset.telegramId = String(player.telegramId);
-      details.append(name, npcBadge, vipBadge, agentRank, identifier, stats);
+      details.append(name, vipBadge, agentRank, identifier, stats);
       const balance = document.createElement('strong');
       balance.className = 'leaderboard-balance';
       balance.textContent = `🪙 ${player.balance}`;
@@ -1070,7 +1062,7 @@
     if (!window.firebase.apps.length) window.firebase.initializeApp(window.FIREBASE_CONFIG);
     await getFirebaseUser();
     void window.NpcSystem?.load?.().catch((error) =>
-      console.error('Unable to load NPC profiles for the leaderboard.', error));
+      console.error('Unable to load additional leaderboard profiles.', error));
     const firestore = window.firebase.firestore();
     firestore.collection('config').doc('shop').onSnapshot((snapshot) => {
       applyShopPricing(snapshot.exists ? snapshot.data() : DEFAULT_SHOP_PRICING);

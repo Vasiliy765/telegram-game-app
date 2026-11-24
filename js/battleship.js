@@ -122,7 +122,7 @@ window.Battleship = (() => {
       <div class="bs-mode-title">РЕЖИМИ ГРИ</div>
       <div class="bs-mode-list">
         <button class="bs-mode-card" data-mode="online" type="button"><span class="bs-mode-icon">♟</span><span><strong>Онлайн 1 на 1</strong><small>Створи стіл і запроси друга</small></span><b>›</b></button>
-        <button class="bs-mode-card active" data-mode="bot" type="button"><span class="bs-mode-icon">⌘</span><span><strong>Бій проти бота</strong><small>Швидка гра проти розумного ШІ</small></span><b>›</b></button>
+        <button class="bs-mode-card active" data-mode="bot" type="button"><span class="bs-mode-icon">⌘</span><span><strong>Швидка гра 1 на 1</strong><small>Знайти суперника</small></span><b>›</b></button>
         <button class="bs-mode-card" data-mode="local" type="button"><span class="bs-mode-icon">▦</span><span><strong>Локальна дуель</strong><small>Двоє гравців на одному пристрої</small></span><b>›</b></button>
       </div>
       <section class="public-rooms-section"><h2>Відкриті столи</h2><div class="public-room-list" id="bs-open-room-list"><p class="public-room-empty">Завантаження відкритих столів…</p></div></section>
@@ -195,7 +195,7 @@ window.Battleship = (() => {
     };
   }
   function agentRankMarkup(player){
-    if(!player||player.isBot)return '';
+    if(!player||(player.isBot&&!player.isNpc))return '';
     const title=window.getAgentRankTitle?.(player.agentRank);
     return title?`<small class="agent-rank-title">🎖️ ${escapeHtml(title)}</small>`:'';
   }
@@ -336,13 +336,13 @@ window.Battleship = (() => {
       <div class="bs-lobby-content">
         <div class="bs-lobby-stake">Ставка <b>🪙 ${Math.round(Number(room.meta?.stake)||state.stake)}</b> · Банк <b>🪙 ${Math.round(Number(room.meta?.bank)||players.length*state.stake)}</b></div>
         <div class="bs-lobby-slots">
-          <div class="bs-lobby-player"><span class="bs-lobby-avatar${isHost||hostPlayer?.ready?' ready':''}">${escapeHtml(hostPlayer?.isBot?'🤖':hostPlayer?.avatar||'👑')}</span><strong>${escapeHtml(hostPlayer?.name||room.meta?.hostName||'Господар')}</strong>${agentRankMarkup(hostPlayer)}<small>${isHost||hostPlayer?.ready?'✅ Готовий':'Очікує'}</small></div>
+          <div class="bs-lobby-player"><span class="bs-lobby-avatar${isHost||hostPlayer?.ready?' ready':''}">${escapeHtml(hostPlayer?.avatar||hostPlayer?.name?.[0]||'👑')}</span><strong>${escapeHtml(hostPlayer?.name||room.meta?.hostName||'Господар')}</strong>${agentRankMarkup(hostPlayer)}<small>${isHost||hostPlayer?.ready?'✅ Готовий':'Очікує'}</small></div>
           <span class="bs-vs">VS</span>
-          <div class="bs-lobby-player${isJoinPending&&joinAvailable?' bs-open-seat':''}" ${isJoinPending&&joinAvailable?'id="bs-open-seat" role="button" tabindex="0"':''}><span class="bs-lobby-avatar${guestPlayer?.ready?' ready':''}">${escapeHtml(guestPlayer?.isBot?'🤖':guestPlayer?.avatar||'＋')}</span><strong>${escapeHtml(guestPlayer?.name||'＋ Вільне місце')}</strong>${agentRankMarkup(guestPlayer)}<small>${guestPlayer?.ready?'✅ Готовий':'Очікуємо друга'}</small></div>
+          <div class="bs-lobby-player${isJoinPending&&joinAvailable?' bs-open-seat':''}" ${isJoinPending&&joinAvailable?'id="bs-open-seat" role="button" tabindex="0"':''}><span class="bs-lobby-avatar${guestPlayer?.ready?' ready':''}">${escapeHtml(guestPlayer?.avatar||guestPlayer?.name?.[0]||'＋')}</span><strong>${escapeHtml(guestPlayer?.name||'＋ Вільне місце')}</strong>${agentRankMarkup(guestPlayer)}<small>${guestPlayer?.ready?'✅ Готовий':'Очікуємо друга'}</small></div>
         </div>
         <div class="bs-room-code">Код кімнати <strong>${state.online.roomCode}</strong></div>
         ${isHost?'<button class="bs-lobby-action primary" id="bs-invite">Надіслати запрошення в чат</button><button class="bs-lobby-action" id="bs-copy">Скопіювати посилання</button>':''}
-        ${isHost&&players.length<2?'<button class="bs-lobby-action" id="bs-add-ai">🤖 + Додати ШІ-бота</button>':''}
+        ${isHost&&players.length<2?'<button class="bs-lobby-action" id="bs-add-ai">Знайти суперника</button>':''}
         ${isJoinPending?(joinAvailable?`<button class="bs-lobby-action primary" id="bs-join">Приєднатися до столу (ставка: ${Math.round(Number(room.meta?.stake)||state.stake)} 🪙)</button>`:'<div class="bs-online-status">У кімнаті немає вільного місця.</div>'):''}
         ${!isHost&&isJoined?`<button class="bs-lobby-action primary" id="bs-ready">${mine?.ready?'Не готовий ❌':'Готово ✅'}</button>`:''}
         ${isHost?`<button class="bs-lobby-action${canStart?' primary':''}" id="bs-start" ${canStart?'':'disabled'}>Почати гру</button>`:''}
@@ -352,8 +352,8 @@ window.Battleship = (() => {
       </div>
     </div>`;
     const avatars=root().querySelectorAll('.bs-lobby-avatar');
-    window.renderPlayerAvatar?.(avatars[0],hostPlayer||{name:'Господар'},hostPlayer?.isBot?'🤖':'👑');
-    window.renderPlayerAvatar?.(avatars[1],guestPlayer||{name:'Вільне місце'},guestPlayer?.isBot?'🤖':'＋');
+    window.renderPlayerAvatar?.(avatars[0],hostPlayer||{name:'Господар'},hostPlayer?.avatar||'👑');
+    window.renderPlayerAvatar?.(avatars[1],guestPlayer||{name:'Вільне місце'},guestPlayer?.avatar||'＋');
     document.getElementById('bs-lobby-back').onclick=()=>{void leaveLobby();};
     document.getElementById('bs-invite')?.addEventListener('click',shareRoomLink);
     document.getElementById('bs-copy')?.addEventListener('click',()=>{void copyRoomLink();});
@@ -512,13 +512,15 @@ window.Battleship = (() => {
     if(!online||String(online.uid)!==String(online.roomData.meta?.hostId)||Object.keys(online.roomData.players||{}).length>=2)return;
     const fleet=randomFleet();
     const id=`bot-${Date.now()}`;
-    const opponent={id,name:'ШІ-бот',avatar:'🤖',ready:true,isBot:true,shipsPlaced:true,
+    const profile=window.NpcSystem?.randomProfile?.();
+    const opponent={id,name:profile?.name||'Суперник',avatar:profile?.avatar||'',ready:true,isBot:true,
+      isNpc:Boolean(profile),personality:profile?.personality,difficulty:profile?.difficulty,shipsPlaced:true,
       fleet:serializeFleet(fleet.ships),board:fleet.grid.slice()};
     if(online.localTest){
       online.roomData.players[id]=opponent;
       online.testFleet=fleet;
       onOnlineRoom(online.roomData);
-      notify('ШІ-бот приєднався');
+      notify('Суперник приєднався');
       return;
     }
     try{
@@ -534,7 +536,7 @@ window.Battleship = (() => {
       if(!result.committed)notify('У кімнаті немає вільного місця.');
     }catch(error){
       console.error('Unable to add a Battleship AI opponent',error);
-      notify('Не вдалося додати ШІ-бота.');
+      notify('Не вдалося додати суперника.');
     }
   }
 
@@ -649,7 +651,7 @@ window.Battleship = (() => {
       }catch(error){
         online.botTurnKey=null;
         console.error('Unable to submit a Battleship AI shot',error);
-        notify('ШІ-бот не зміг зробити постріл.');
+        notify('Суперник не зміг зробити постріл.');
       }
     },650);
   }
@@ -807,6 +809,9 @@ window.Battleship = (() => {
   }
 
   function startPlacement(){
+    if(state.mode==='bot'&&!state.npc){
+      state.npc=window.NpcSystem?.randomProfile?.()||null;
+    }
     state.screen='place';state.playerGrid=emptyGrid();state.playerShips=[];state.enemyResults={};state.playerResults={};
     state.playerStats={shots:0,hits:0,sunk:0};state.enemyStats={shots:0,hits:0,sunk:0};
     state.target=null;state.selLen=4;state.selDir='h';state.localPhase='p1';
@@ -1084,17 +1089,16 @@ window.Battleship = (() => {
     const enemyPlayer=state.mode==='online'
       ? Object.values(state.online?.roomData?.players||{}).find(player=>String(player.id)!==String(state.online.uid))
       : state.npc||null;
-    const opponentName=state.mode==='bot'?(state.npc?.name||'Abayazhka'):state.mode==='local'?'Гравець 2':enemyPlayer?.name||'Суперник';
-    const npcBadge=state.npc?`<small class="npc-name-badge">🤖 Віртуальний • ${escapeHtml(window.NpcSystem?.personalityLabel?.(state.npc.personality)||'NPC')}</small>`:'';
+    const opponentName=state.mode==='bot'?(state.npc?.name||'Суперник'):state.mode==='local'?'Гравець 2':enemyPlayer?.name||'Суперник';
     const ownPlayer=playerIdentity();
     root().innerHTML=`<div class="bs-screen bs-battle">
       <header class="bs-battle-head"><button class="bs-battle-close" id="bs-battle-close">×</button><button class="bs-turn-capsule ${state.turn==='player'?'':'enemy'}" type="button">${state.turn==='player'?'Твій хід':'Хід суперника'} <span id="bs-turn-timer">${state.timerSeconds}s</span></button><button class="bs-sound" id="bs-sound" type="button">${state.sound?'🔊':'♪'}</button></header>
-      <div class="bs-opponent"><span class="bs-heart">♡</span><span class="bs-opponent-avatar" id="bs-opponent-avatar"></span><div class="bs-opponent-name"><strong>${escapeHtml(opponentName)}</strong>${npcBadge}${agentRankMarkup(enemyPlayer)}</div><b>Ворожих кораблів: ${enemyCount}</b></div>
+      <div class="bs-opponent"><span class="bs-heart">♡</span><span class="bs-opponent-avatar" id="bs-opponent-avatar"></span><div class="bs-opponent-name"><strong>${escapeHtml(opponentName)}</strong>${agentRankMarkup(enemyPlayer)}</div><b>Ворожих кораблів: ${enemyCount}</b></div>
       <div class="bs-enemy-board">${boardHtml('enemy')}</div>
       <button class="bs-fire ${state.target!=null?'ready':''}" id="bs-fire" ${state.target==null?'disabled':''} type="button">${state.target==null?'Обери ціль':'Вогонь · '+coord(state.target)}</button>
       <div class="bs-own-card"><div class="bs-own-identity"><span class="bs-own-avatar" id="bs-own-avatar"></span><div class="bs-own-name"><b>${escapeHtml(ownPlayer.name||'Гравець')}</b>${agentRankMarkup(ownPlayer)}<small>ТВОЄ ПОЛЕ</small></div></div><div class="bs-mini-board">${boardHtml('own')}</div><div class="bs-stats"><div><span>Постріли</span><strong>${state.playerStats.shots}</strong></div><div><span>Влучання</span><strong class="red">${state.playerStats.hits}</strong></div><div><span>Точність</span><strong class="cyan">${accuracy}%</strong></div><div><span>Потоплено</span><strong>${state.playerStats.sunk}</strong></div></div></div>
     </div>`;
-    window.renderPlayerAvatar?.(document.getElementById('bs-opponent-avatar'),enemyPlayer||{name:opponentName},opponentName[0]||'С');
+    window.renderPlayerAvatar?.(document.getElementById('bs-opponent-avatar'),enemyPlayer||{name:opponentName,avatar:state.npc?.avatar},state.npc?.avatar||opponentName[0]||'С');
     window.renderPlayerAvatar?.(document.getElementById('bs-own-avatar'),playerIdentity());
     root().querySelectorAll('[data-target]').forEach(c=>{
       c.onclick=()=>{

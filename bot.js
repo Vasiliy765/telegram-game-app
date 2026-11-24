@@ -1188,11 +1188,10 @@ async function sendTop(chatId, caller = null) {
   const rows = topEntries.map((player, index) => {
     const playerName = player.name || `Гравець ${player.id}`;
     const vipBadge = Number(player.vipUntil || 0) > Date.now() ? '👑 VIP · ' : '';
-    const npcBadge = player.isNpc ? ' · 🤖 Віртуальний' : '';
     const wins = Math.round(Number(player.wins) || 0);
     const losses = Math.round(Number(player.losses) || 0);
     const rating = Math.round(Number(player.rating) || 1000);
-    return `${index + 1}. ${escapeHtml(`${vipBadge}${playerName}${npcBadge}`)} — `
+    return `${index + 1}. ${escapeHtml(`${vipBadge}${playerName}`)} — `
       + `<b>${formatCoins(player.balance || 0)} 🪙</b> · ${wins}П/${losses}П · Рейт ${rating}`;
   });
   let remainingMessage = '';
@@ -1226,11 +1225,6 @@ async function sendTop(chatId, caller = null) {
       parse_mode: 'HTML',
     });
   }
-  if (sections[1]) {
-    await sendMessage(chatId, `<b>🏆 Топ-50 гравців (продовження)</b>\n${sections[1]}`, {
-      parse_mode: 'HTML',
-    });
-  }
 }
 
 async function announceNpcGameResults() {
@@ -1244,13 +1238,13 @@ async function announceNpcGameResults() {
     if (!/^npc_\d+$/.test(String(challenge.accepterId || ''))) continue;
     const npcSnapshot = await npcs.doc(challenge.accepterId).get();
     if (!npcSnapshot.exists) continue;
-    const npcName = npcSnapshot.get('name') || 'Віртуальний гравець';
+    const npcName = npcSnapshot.get('name') || 'Гравець';
     if (challenge.game === 'dice') {
       if (challenge.result === 'draw') {
         await sendMessage(
           challenge.chatId,
           `🎲 Кубик завершено внічию.\n${escapeHtml(challenge.creatorName)} і `
-            + `<b>${escapeHtml(npcName)} [Віртуальний гравець]</b>: `
+            + `<b>${escapeHtml(npcName)}</b>: `
             + `${challenge.creatorRoll}:${challenge.accepterRoll}. Ставки повернуті.`,
           { parse_mode: 'HTML' },
           challenge.threadId,
@@ -1262,7 +1256,6 @@ async function announceNpcGameResults() {
         await sendMessage(
           challenge.chatId,
           `🎲 Кубик завершено.\nПереможець: <b>${escapeHtml(winnerName)}</b>`
-            + (challenge.winnerId === challenge.accepterId ? ' [Віртуальний гравець]' : '')
             + `\nКубики: ${challenge.creatorRoll}:${challenge.accepterRoll}`
             + ` · Виграш: <b>${formatCoins(challenge.payout || 0)} 🪙</b>.`,
           { parse_mode: 'HTML' },
@@ -1277,7 +1270,7 @@ async function announceNpcGameResults() {
       : challenge.creatorName;
     await sendMessage(
       challenge.chatId,
-      `🪙 Монетка завершена.\nПереможець: <b>${escapeHtml(winnerName)}</b> [Віртуальний гравець]\n`
+      `🪙 Монетка завершена.\nПереможець: <b>${escapeHtml(winnerName)}</b>\n`
         + `Виграш: <b>${formatCoins(challenge.payout || 0)} 🪙</b>.`,
       { parse_mode: 'HTML' },
       challenge.threadId,
@@ -2410,11 +2403,11 @@ const server = http.createServer((request, response) => {
         if (action === 'begin-match') {
           const stake = Number(body.stake);
           if (!Number.isSafeInteger(stake) || ![10, 25].includes(stake)) {
-            throw httpError(400, 'NPC stake must be 10 or 25 coins.');
+            throw httpError(400, 'Stake must be 10 or 25 coins.');
           }
           const game = String(body.game || '');
           if (!['durak', 'battleship', 'tictactoe'].includes(game)) {
-            throw httpError(400, 'Unknown NPC game.');
+            throw httpError(400, 'Unknown game.');
           }
           sendJson(response, 200, await npcSystem.beginMatch({
             userId: String(telegramUser.id),
@@ -2426,7 +2419,7 @@ const server = http.createServer((request, response) => {
         }
         if (action === 'finish-match' || action === 'cancel-match') {
           const matchId = String(body.matchId || '');
-          if (!/^[\da-f-]{36}$/i.test(matchId)) throw httpError(400, 'Invalid NPC match ID.');
+          if (!/^[\da-f-]{36}$/i.test(matchId)) throw httpError(400, 'Invalid match ID.');
           const result = action === 'finish-match'
             ? await npcSystem.finishMatch({
               matchId,

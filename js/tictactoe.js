@@ -63,12 +63,7 @@ window.TicTacToe = (() => {
   }
 
   function agentRankMarkup(player) {
-    if (player?.isNpc) {
-      return `<small class="npc-name-badge">🤖 Віртуальний • ${escapeHtml(
-        window.NpcSystem?.personalityLabel?.(player.personality) || 'NPC',
-      )}</small>`;
-    }
-    if (!player || player.isBot) return '';
+    if (!player || (player.isBot && !player.isNpc)) return '';
     const title = window.getAgentRankTitle?.(player.agentRank ?? player.upgrades?.rank);
     return title ? `<small class="agent-rank-title">🎖️ ${escapeHtml(title)}</small>` : '';
   }
@@ -99,7 +94,7 @@ window.TicTacToe = (() => {
         <div><h1 class="ttt-title">Хрестики-нулики</h1><p class="ttt-subtitle">Швидка дуель на полі 3×3</p></div>
         <div class="ttt-mode-list">
           <button class="ttt-mode-card" type="button" data-mode="online"><span class="ttt-mode-icon">♟</span><span class="ttt-mode-copy"><b>Онлайн 1 на 1</b><small>Запроси друга за посиланням</small></span><b>›</b></button>
-          <button class="ttt-mode-card" type="button" data-mode="bot"><span class="ttt-mode-icon">⌘</span><span class="ttt-mode-copy"><b>Дуель проти бота</b><small>Розумний ШІ · гра на монети</small></span><b>›</b></button>
+          <button class="ttt-mode-card" type="button" data-mode="bot"><span class="ttt-mode-icon">⌘</span><span class="ttt-mode-copy"><b>Швидка гра 1 на 1</b><small>Знайти суперника · гра на монети</small></span><b>›</b></button>
           <button class="ttt-mode-card" type="button" data-mode="local"><span class="ttt-mode-icon">▦</span><span class="ttt-mode-copy"><b>На одному екрані</b><small>Двоє гравців ходять по черзі</small></span><b>›</b></button>
         </div>
         <section class="public-rooms-section"><h2>Відкриті столи</h2><div class="public-room-list" id="ttt-open-room-list"><p class="public-room-empty">Завантаження відкритих столів…</p></div></section>
@@ -127,7 +122,7 @@ window.TicTacToe = (() => {
     const isOnline = state.mode === 'online';
     if (!shell(`${topbar()}
       <main class="ttt-stake-screen">
-        <div><h1 class="ttt-title">${isOnline ? 'Онлайн 1 на 1' : 'Дуель проти бота'}</h1>
+        <div><h1 class="ttt-title">${isOnline ? 'Онлайн 1 на 1' : 'Швидка гра 1 на 1'}</h1>
           <p class="ttt-subtitle">Обери ставку 🪙</p></div>
         <div class="ttt-stakes">${STAKES.map((stake) =>
           `<button class="ttt-stake${stake === state.stake ? ' active' : ''}" type="button" data-stake="${stake}">🪙 ${stake}</button>`
@@ -321,13 +316,13 @@ window.TicTacToe = (() => {
           <h1 class="ttt-title">Онлайн 1 на 1</h1>
           <p class="ttt-subtitle">Ставка 🪙 ${Math.round(Number(room.meta?.stake) || state.stake)} · Банк 🪙 ${Math.round(Number(room.meta?.bank) || (players.length * state.stake))}</p>
           <div class="ttt-lobby-players">
-            <div class="ttt-player-card"><span class="ttt-avatar${isHost || hostPlayer?.ready ? ' ready' : ''}">${escapeHtml(hostPlayer?.isBot ? '🤖' : hostPlayer?.name?.[0] || '👑')}</span><b>${escapeHtml(hostPlayer?.name || room.meta?.hostName || 'Господар')} · ✕</b>${agentRankMarkup(hostPlayer)}<small>${isHost || hostPlayer?.ready ? '✅ Готовий' : 'Очікує'}</small></div>
+            <div class="ttt-player-card"><span class="ttt-avatar${isHost || hostPlayer?.ready ? ' ready' : ''}">${escapeHtml(hostPlayer?.avatar || hostPlayer?.name?.[0] || '👑')}</span><b>${escapeHtml(hostPlayer?.name || room.meta?.hostName || 'Господар')} · ✕</b>${agentRankMarkup(hostPlayer)}<small>${isHost || hostPlayer?.ready ? '✅ Готовий' : 'Очікує'}</small></div>
             <span>VS</span>
-            <div class="ttt-player-card${isJoinPending && joinAvailable ? ' ttt-open-seat' : ''}" ${isJoinPending && joinAvailable ? 'data-action="join-seat" role="button" tabindex="0"' : ''}><span class="ttt-avatar${guestPlayer?.ready ? ' ready' : ''}">${escapeHtml(guestPlayer?.isBot ? '🤖' : guestPlayer?.name?.[0] || '+')}</span><b>${escapeHtml(guestPlayer?.name || '＋ Вільне місце')} · ○</b>${agentRankMarkup(guestPlayer)}<small>${guestPlayer?.ready ? '✅ Готовий' : 'Очікуємо друга'}</small></div>
+            <div class="ttt-player-card${isJoinPending && joinAvailable ? ' ttt-open-seat' : ''}" ${isJoinPending && joinAvailable ? 'data-action="join-seat" role="button" tabindex="0"' : ''}><span class="ttt-avatar${guestPlayer?.ready ? ' ready' : ''}">${escapeHtml(guestPlayer?.avatar || guestPlayer?.name?.[0] || '+')}</span><b>${escapeHtml(guestPlayer?.name || '＋ Вільне місце')} · ○</b>${agentRankMarkup(guestPlayer)}<small>${guestPlayer?.ready ? '✅ Готовий' : 'Очікуємо друга'}</small></div>
           </div>
           <div class="ttt-lobby-hint">${isJoinPending ? 'Кімната відкрита. Приєднайтеся, щоб зайняти місце.' : !isHost ? 'Очікування початку гри...' : `Код кімнати: <b>${escapeHtml(state.online.roomCode)}</b><br>${notice}<br>Готові: ${players.filter((player) => String(player.id) === String(room.meta?.hostId) || player.ready || player.isBot).length}/2`}</div>
           ${isHost ? '<button class="ttt-lobby-action" type="button" data-action="invite">Надіслати запрошення в чат</button><button class="ttt-lobby-action" type="button" data-action="copy">Скопіювати посилання</button>' : ''}
-          ${isHost && players.length < 2 ? '<button class="ttt-lobby-action" type="button" data-action="ai">🤖 + Додати ШІ-бота</button>' : ''}
+          ${isHost && players.length < 2 ? '<button class="ttt-lobby-action" type="button" data-action="ai">Знайти суперника</button>' : ''}
           ${state.fundingError ? '<p class="ttt-lobby-hint">Недостатньо монет для цієї ставки.</p>' : ''}
           ${isJoinPending ? (joinAvailable ? `<button class="ttt-primary ttt-join-table" type="button" data-action="join">Приєднатися до столу (ставка: ${Math.round(Number(room.meta?.stake) || state.stake)} 🪙)</button>` : '<p class="ttt-lobby-hint">У кімнаті немає вільного місця.</p>') : ''}
           ${!isHost && isJoined ? `<button class="ttt-primary" type="button" data-action="ready">${mine?.ready ? 'Не готовий ❌' : 'Готово ✅'}</button>` : ''}
@@ -336,8 +331,8 @@ window.TicTacToe = (() => {
         </div>
       </main>`)) return;
     const lobbyAvatars = root().querySelectorAll('.ttt-lobby-players .ttt-avatar');
-    window.renderPlayerAvatar?.(lobbyAvatars[0], hostPlayer || { name: 'Господар' }, hostPlayer?.isBot ? '🤖' : '👑');
-    window.renderPlayerAvatar?.(lobbyAvatars[1], guestPlayer || { name: 'Вільне місце' }, guestPlayer?.isBot ? '🤖' : '＋');
+    window.renderPlayerAvatar?.(lobbyAvatars[0], hostPlayer || { name: 'Господар' }, hostPlayer?.avatar || '👑');
+    window.renderPlayerAvatar?.(lobbyAvatars[1], guestPlayer || { name: 'Вільне місце' }, guestPlayer?.avatar || '＋');
     root().querySelector('[data-action="sound"]').onclick = toggleSound;
     root().querySelector('[data-action="invite"]')?.addEventListener('click', shareRoom);
     root().querySelector('[data-action="copy"]')?.addEventListener('click', () => { void copyRoom(); });
@@ -458,11 +453,22 @@ window.TicTacToe = (() => {
     if (!online || String(online.uid) !== String(online.roomData.meta?.hostId) ||
         Object.keys(online.roomData.players || {}).length >= 2) return;
     const id = `bot-${Date.now()}`;
-    const bot = { id, name: 'ШІ-бот', symbol: 'O', ready: true, isBot: true };
+    const profile = window.NpcSystem?.randomProfile?.();
+    const bot = {
+      id,
+      name: profile?.name || 'Суперник',
+      avatar: profile?.avatar || '',
+      symbol: 'O',
+      ready: true,
+      isBot: true,
+      isNpc: Boolean(profile),
+      personality: profile?.personality,
+      difficulty: profile?.difficulty,
+    };
     if (online.localTest) {
       online.roomData.players[id] = bot;
       renderLobby();
-      notify('ШІ-бот приєднався');
+      notify('Суперник приєднався');
       return;
     }
     try {
@@ -480,7 +486,7 @@ window.TicTacToe = (() => {
       if (!result.committed) notify('У кімнаті немає вільного місця.');
     } catch (error) {
       console.error('Unable to add a tic-tac-toe AI opponent', error);
-      notify('Не вдалося додати ШІ-бота.');
+      notify('Не вдалося додати суперника.');
     }
   }
 
@@ -593,6 +599,9 @@ window.TicTacToe = (() => {
       if (state.mode === 'bot') renderStakeScreen();
       else renderLobby();
       return false;
+    }
+    if (mode === 'bot' && !state.npc) {
+      state.npc = window.NpcSystem?.randomProfile?.() || null;
     }
     state.mode = mode;
     state.stake = roundedStake;
@@ -759,7 +768,7 @@ window.TicTacToe = (() => {
         });
       } catch (error) {
         console.error('Unable to submit a tic-tac-toe AI move', error);
-        notify('ШІ-бот не зміг зробити хід.');
+        notify('Суперник не зміг зробити хід.');
       }
     }, 450);
   }
@@ -780,7 +789,7 @@ window.TicTacToe = (() => {
     const secondPlayer = online ? opponent : state.npc || null;
     const firstName = online ? me?.name || 'Ти' : localProfile?.name || (state.mode === 'local' ? 'Гравець 1' : 'Ти');
     const secondName = online ? opponent?.name || 'Суперник'
-      : state.npc?.name || (state.mode === 'local' ? 'Гравець 2' : state.mode === 'test' ? 'ШІ-бот' : 'Розумний бот');
+      : state.npc?.name || (state.mode === 'local' ? 'Гравець 2' : 'Суперник');
     const currentName = turnSymbol === 'X' ? firstName : secondName;
     const cells = state.board.map((value, index) => {
       const disabled = Boolean(value) || !localTurn;
