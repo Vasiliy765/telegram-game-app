@@ -545,8 +545,8 @@ async function sendHelp(chatId) {
       + '/start — відкрити бота\n/play — запустити Mini App\n/balance — баланс 🪙 та 💎\n'
       + '/zp — зарплата агента раз на 3 години\n/top — рейтинг гравців\n/shop — магазин діамантів\n'
       + '/support — написати адміністратору\n'
-      + 'Фруктові мініігри: «дік» / «дик» — банан, «сісі» / «сиси» — вишні (кулдаун 2 години).\n'
-      + '«топ бананів» / «топ вишень» — рейтинг фруктів.\n'
+      + 'Фруктові мініігри: «дік» / «дик» — банан, «сісі» / «сиси» — груди (кулдаун 2 години).\n'
+      + '«топ діків» / «топ грудей» — рейтинг фруктів.\n'
       + 'У групі адміністратори можуть керувати РП-діями: /rp on або /rp off.\n\n'
       + 'У групі: «Зіграти в монетку &lt;ставка&gt;» або «Зіграти в кубика &lt;ставка&gt;» '
       + '(10–300 🪙).',
@@ -1702,9 +1702,9 @@ onUpdate('message', async (context) => {
         user: message.from,
         sizeField: 'itemASize',
         timeField: 'lastItemATime',
-        increaseText: 'ваш банан 🍌 виріс',
-        decreaseText: 'ваш банан 🍌 зменшився',
-        measurementText: 'Тепер довжина вашого банана',
+        increaseText: 'ваш член 🍌 виріс',
+        decreaseText: 'ваш член 🍌 зменшився',
+        measurementText: 'Тепер довжина вашого члена',
       });
       return;
     }
@@ -1714,18 +1714,18 @@ onUpdate('message', async (context) => {
         user: message.from,
         sizeField: 'itemBSize',
         timeField: 'lastItemBTime',
-        increaseText: 'ваші вишні 🍒 виросли',
-        decreaseText: 'ваші вишні 🍒 зменшилися',
-        measurementText: 'Тепер об’єм ваших вишень',
+        increaseText: 'ваші груди 🍒 виросли',
+        decreaseText: 'ваші груди 🍒 зменшилися',
+        measurementText: 'Тепер об’єм ваших грудей',
       });
       return;
     }
-    if (/^топ бананів$/i.test(text || '')) {
+    if (/^топ діків$/i.test(text || '')) {
       await sendItemTop(message.chat.id, 'itemASize', 'бананів', '🍌');
       return;
     }
-    if (/^топ вишень$/i.test(text || '')) {
-      await sendItemTop(message.chat.id, 'itemBSize', 'вишень', '🍒');
+    if (/^топ грудей$/i.test(text || '')) {
+      await sendItemTop(message.chat.id, 'itemBSize', 'грудей', '🍒');
       return;
     }
 
