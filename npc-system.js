@@ -39,15 +39,13 @@ function safeInteger(value, fallback, min, max) {
 }
 
 class NpcSystem {
-  constructor({ db, users, challenges, logger = console }) {
+  constructor({ db, users, challenges }) {
     this.db = db;
     this.users = users;
     this.challenges = challenges;
-    this.logger = logger;
     this.configRef = db.collection('config').doc('npc');
     this.npcs = db.collection('npcs');
     this.matches = db.collection('npcMatches');
-    this.activityTimer = null;
   }
 
   async getConfig() {
@@ -63,8 +61,6 @@ class NpcSystem {
       count: safeInteger(config.count, 20, 0, 50),
       maxActiveRooms: safeInteger(config.maxActiveRooms, 2, 1, 10),
       activeRooms: safeInteger(config.activeRooms, 0, 0, 10),
-      activityLimit: safeInteger(config.activityLimit, 3, 0, 20),
-      activityIntervalMs: safeInteger(config.activityIntervalMs, 300000, 60000, 3600000),
     };
   }
 
@@ -74,13 +70,10 @@ class NpcSystem {
       enabled: typeof patch.enabled === 'boolean' ? patch.enabled : current.enabled,
       count: safeInteger(patch.count, current.count, 0, 50),
       maxActiveRooms: safeInteger(patch.maxActiveRooms, current.maxActiveRooms, 1, 10),
-      activityLimit: safeInteger(patch.activityLimit, current.activityLimit, 0, 20),
-      activityIntervalMs: safeInteger(patch.activityIntervalMs, current.activityIntervalMs, 60000, 3600000),
       activeRooms: current.activeRooms,
     };
     await this.configRef.set(next, { merge: true });
     await this.ensureNpcProfiles(next.count);
-    if (this.activityTimer) this.restart();
     return next;
   }
 
@@ -143,7 +136,6 @@ class NpcSystem {
     const config = await this.getConfig();
     await this.ensureNpcProfiles(config.count);
     await this.cleanupExpiredMatches();
-    this.start(config);
   }
 
   async cleanupExpiredMatches() {
@@ -175,20 +167,6 @@ class NpcSystem {
         transaction.update(matchDoc.ref, { status: 'expired', finishedAt: Date.now() });
       });
     }
-  }
-
-  start(config) {
-    if (this.activityTimer) clearInterval(this.activityTimer);
-    this.activityTimer = null;
-    if (!config?.enabled) return;
-    this.activityTimer = setInterval(() => {
-      void this.runActivity(config.activityLimit).catch((error) =>
-        this.logger.error('NPC activity failed:', error));
-    }, config.activityIntervalMs);
-  }
-
-  restart() {
-    void this.initialize();
   }
 
   chooseDifficulty(npc, gameContext = {}) {

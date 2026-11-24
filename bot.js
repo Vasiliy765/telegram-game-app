@@ -28,7 +28,6 @@ admin.initializeApp({
 
 const db = admin.firestore();
 const users = db.collection('users');
-const npcs = db.collection('npcs');
 const challenges = db.collection('challenges');
 const diamondPurchases = db.collection('diamondPurchases');
 const bot = new Bot(BOT_TOKEN);
@@ -36,7 +35,6 @@ const npcSystem = new NpcSystem({
   db,
   users,
   challenges,
-  logger: console,
 });
 const updateContext = new AsyncLocalStorage();
 const WEBAPP_URL = 'https://vasiliy765.github.io/telegram-game-app/';
@@ -1166,19 +1164,10 @@ async function processSuccessfulDiamondPayment(message) {
 }
 
 async function sendTop(chatId, caller = null) {
-  const config = await npcSystem.getConfig();
-  const [userSnapshot, npcProfiles] = await Promise.all([
-    users.orderBy('balance', 'desc').limit(50).get(),
-    config.enabled ? npcSystem.listNpcProfiles(50) : [],
-  ]);
-  const entries = [
-    ...userSnapshot.docs
-      .filter((doc) => doc.get('isNpc') !== true)
-      .map((doc) => ({ id: doc.id, ...doc.data() })),
-    ...npcProfiles.filter((npc) => npc.enabled !== false && npc.isNpc === true),
-  ].sort((left, right) =>
-    (Number(right.balance) || 0) - (Number(left.balance) || 0) ||
-    String(left.id).localeCompare(String(right.id)));
+  const userSnapshot = await users.orderBy('balance', 'desc').limit(50).get();
+  const entries = userSnapshot.docs
+    .filter((doc) => doc.get('isNpc') !== true)
+    .map((doc) => ({ id: doc.id, ...doc.data() }));
   if (!entries.length) {
     await sendMessage(chatId, 'Поки що гравців немає.');
     return;
@@ -1206,8 +1195,7 @@ async function sendTop(chatId, caller = null) {
         const balance = Number(callerSnapshot.get('balance')) || 0;
         const countSnapshot = await users.where('balance', '>', balance).count().get();
         const realAhead = Number(countSnapshot.data().count) || 0;
-        const npcAhead = npcProfiles.filter((npc) => (Number(npc.balance) || 0) > balance).length;
-        const positionsAway = Math.max(0, realAhead + npcAhead - 49);
+        const positionsAway = Math.max(0, realAhead - 49);
         remainingMessage = `\n🎯 До ТОП-50 залишилося ${positionsAway} позицій.`;
       } else {
         remainingMessage = '\n🎯 До ТОП-50 залишилося 50+ позицій.';
@@ -1223,60 +1211,6 @@ async function sendTop(chatId, caller = null) {
     const footer = index === sections.length - 1 ? remainingMessage : '';
     await sendMessage(chatId, `${heading}${sections[index]}${footer}`, {
       parse_mode: 'HTML',
-    });
-  }
-}
-
-async function announceNpcGameResults() {
-  const snapshot = await challenges
-    .where('status', '==', 'completed')
-    .limit(10)
-    .get();
-  for (const doc of snapshot.docs) {
-    const challenge = doc.data();
-    if (challenge.npcAcceptedNotified === true) continue;
-    if (!/^npc_\d+$/.test(String(challenge.accepterId || ''))) continue;
-    const npcSnapshot = await npcs.doc(challenge.accepterId).get();
-    if (!npcSnapshot.exists) continue;
-    const npcName = npcSnapshot.get('name') || 'Гравець';
-    if (challenge.game === 'dice') {
-      if (challenge.result === 'draw') {
-        await sendMessage(
-          challenge.chatId,
-          `🎲 Кубик завершено внічию.\n${escapeHtml(challenge.creatorName)} і `
-            + `<b>${escapeHtml(npcName)}</b>: `
-            + `${challenge.creatorRoll}:${challenge.accepterRoll}. Ставки повернуті.`,
-          { parse_mode: 'HTML' },
-          challenge.threadId,
-        );
-      } else {
-        const winnerName = challenge.winnerId === challenge.accepterId
-          ? npcName
-          : challenge.creatorName;
-        await sendMessage(
-          challenge.chatId,
-          `🎲 Кубик завершено.\nПереможець: <b>${escapeHtml(winnerName)}</b>`
-            + `\nКубики: ${challenge.creatorRoll}:${challenge.accepterRoll}`
-            + ` · Виграш: <b>${formatCoins(challenge.payout || 0)} 🪙</b>.`,
-          { parse_mode: 'HTML' },
-          challenge.threadId,
-        );
-      }
-      await doc.ref.update({ npcAcceptedNotified: true });
-      continue;
-    }
-    const winnerName = challenge.winnerId === challenge.accepterId
-      ? npcName
-      : challenge.creatorName;
-    await sendMessage(
-      challenge.chatId,
-      `🪙 Монетка завершена.\nПереможець: <b>${escapeHtml(winnerName)}</b>\n`
-        + `Виграш: <b>${formatCoins(challenge.payout || 0)} 🪙</b>.`,
-      { parse_mode: 'HTML' },
-      challenge.threadId,
-    );
-    await doc.ref.update({
-      npcAcceptedNotified: true,
     });
   }
 }
@@ -2519,10 +2453,6 @@ server.listen(process.env.PORT || 3000);
 
 async function startBot() {
   await npcSystem.initialize();
-  setInterval(() => {
-    void announceNpcGameResults().catch((error) =>
-      console.error('Failed to announce NPC coin results:', error));
-  }, 60_000);
   await bot.api.deleteWebhook({ drop_pending_updates: true });
   await bot.init();
   await configureCommandMenus();
