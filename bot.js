@@ -35,6 +35,7 @@ const WEBAPP_URL = 'https://vasiliy765.github.io/telegram-game-app/';
 const WEBAPP_ORIGIN = new URL(WEBAPP_URL).origin;
 const ADMIN_USER_STATUS_PATH = '/api/admin/user-status';
 const SALARY_COOLDOWN_MS = 3 * 60 * 60 * 1000;
+const ITEM_GAME_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 const VIP_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_UPGRADES = Object.freeze({ diplomat: 0, luck: 0, rank: 0, network: 0 });
 const DIAMOND_PACKAGES = Object.freeze({
@@ -194,12 +195,20 @@ async function ensureUser(user) {
         diamonds: 0,
         upgrades: { ...DEFAULT_UPGRADES },
         lastNetworkClaim: 0,
+        itemASize: 0,
+        lastItemATime: 0,
+        itemBSize: 0,
+        lastItemBTime: 0,
       });
     } else {
       const updates = {};
       if (snapshot.get('diamonds') == null) updates.diamonds = 0;
       if (snapshot.get('upgrades') == null) updates.upgrades = { ...DEFAULT_UPGRADES };
       if (snapshot.get('lastNetworkClaim') == null) updates.lastNetworkClaim = 0;
+      if (snapshot.get('itemASize') == null) updates.itemASize = 0;
+      if (snapshot.get('lastItemATime') == null) updates.lastItemATime = 0;
+      if (snapshot.get('itemBSize') == null) updates.itemBSize = 0;
+      if (snapshot.get('lastItemBTime') == null) updates.lastItemBTime = 0;
       if (Object.keys(updates).length) transaction.update(userRef, updates);
     }
   });
@@ -536,6 +545,8 @@ async function sendHelp(chatId) {
       + '/start — відкрити бота\n/play — запустити Mini App\n/balance — баланс 🪙 та 💎\n'
       + '/zp — зарплата агента раз на 3 години\n/top — рейтинг гравців\n/shop — магазин діамантів\n'
       + '/support — написати адміністратору\n'
+      + 'Фруктові мініігри: «дік» / «дик» — банан, «сісі» / «сиси» — вишні (кулдаун 2 години).\n'
+      + '«топ бананів» / «топ вишень» — рейтинг фруктів.\n'
       + 'У групі адміністратори можуть керувати РП-діями: /rp on або /rp off.\n\n'
       + 'У групі: «Зіграти в монетку &lt;ставка&gt;» або «Зіграти в кубика &lt;ставка&gt;» '
       + '(10–300 🪙).',
@@ -1010,6 +1021,92 @@ async function sendTop(chatId) {
       + `<b>${formatCoins(player.balance || 0)} 🪙</b>`;
   });
   await sendMessage(chatId, `<b>🏆 Топ-10 гравців</b>\n${rows.join('\n')}`, {
+    parse_mode: 'HTML',
+  });
+}
+
+function randomItemDelta() {
+  const increased = Math.random() < 0.7;
+  const magnitude = increased
+    ? Math.floor(Math.random() * 1000) + 1
+    : Math.floor(Math.random() * 500) + 1;
+  return (increased ? magnitude : -magnitude) / 100;
+}
+
+async function playItemGrowth({
+  chatId,
+  user,
+  sizeField,
+  timeField,
+  increaseText,
+  decreaseText,
+  measurementText,
+}) {
+  await ensureUser(user);
+  const userRef = users.doc(telegramId(user));
+  const now = Date.now();
+  const delta = randomItemDelta();
+  const result = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(userRef);
+    if (!snapshot.exists) throw new Error('User profile disappeared during item growth.');
+
+    const savedSize = Number(snapshot.get(sizeField) ?? 0);
+    const currentSize = Number.isFinite(savedSize) ? savedSize : 0;
+    const lastUsedAt = Number(snapshot.get(timeField) ?? 0);
+    const remainingMs = ITEM_GAME_COOLDOWN_MS - (now - lastUsedAt);
+    if (Number.isFinite(lastUsedAt) && remainingMs > 0) {
+      return { kind: 'cooldown', currentSize, remainingMs };
+    }
+
+    const newSize = Math.max(0, Number((currentSize + delta).toFixed(2)));
+    transaction.update(userRef, {
+      [sizeField]: newSize,
+      [timeField]: now,
+      name: displayName(user),
+      username: user.username || '',
+    });
+    return { kind: 'updated', currentSize, newSize };
+  });
+
+  const userName = escapeHtml(displayName(user));
+  if (result.kind === 'cooldown') {
+    const minutesLeft = Math.ceil(result.remainingMs / 60_000);
+    const hours = Math.floor(minutesLeft / 60);
+    const minutes = minutesLeft % 60;
+    await sendMessage(
+      chatId,
+      `⏳ <b>${userName}</b>, наступна спроба буде доступна через ${hours} год ${minutes} хв! `
+        + `Поточний результат: <b>${result.currentSize.toFixed(2)} см</b>.`,
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  const changeText = delta > 0 ? increaseText : decreaseText;
+  const change = Math.abs(delta);
+  await sendMessage(
+    chatId,
+    `<b>${userName}</b>, ${changeText} на <b>${change.toFixed(2)} см</b>\n`
+      + `${measurementText} <b>${result.newSize.toFixed(2)} см</b>`,
+    { parse_mode: 'HTML' },
+  );
+}
+
+async function sendItemTop(chatId, sizeField, title, itemEmoji) {
+  const snapshot = await users.orderBy(sizeField, 'desc').limit(10).get();
+  if (snapshot.empty) {
+    await sendMessage(chatId, `Поки що рейтинг ${title.toLocaleLowerCase('uk-UA')} порожній.`);
+    return;
+  }
+
+  const rows = snapshot.docs.map((doc, index) => {
+    const player = doc.data();
+    const playerName = escapeHtml(player.name || `Гравець ${player.id}`);
+    const size = Number(player[sizeField]);
+    const formattedSize = (Number.isFinite(size) ? size : 0).toFixed(2);
+    return `${index + 1}. <b>${playerName}</b> — ${itemEmoji} <b>${formattedSize} см</b>`;
+  });
+  await sendMessage(chatId, `<b>🏆 Топ-10 ${title}</b>\n${rows.join('\n')}`, {
     parse_mode: 'HTML',
   });
 }
@@ -1598,28 +1695,62 @@ onUpdate('message', async (context) => {
       }
     }
 
+    const text = message.text?.trim();
+    if (/^(дік|дик)$/i.test(text || '')) {
+      await playItemGrowth({
+        chatId: message.chat.id,
+        user: message.from,
+        sizeField: 'itemASize',
+        timeField: 'lastItemATime',
+        increaseText: 'ваш банан 🍌 виріс',
+        decreaseText: 'ваш банан 🍌 зменшився',
+        measurementText: 'Тепер довжина вашого банана',
+      });
+      return;
+    }
+    if (/^(сісі|сиси)$/i.test(text || '')) {
+      await playItemGrowth({
+        chatId: message.chat.id,
+        user: message.from,
+        sizeField: 'itemBSize',
+        timeField: 'lastItemBTime',
+        increaseText: 'ваші вишні 🍒 виросли',
+        decreaseText: 'ваші вишні 🍒 зменшилися',
+        measurementText: 'Тепер об’єм ваших вишень',
+      });
+      return;
+    }
+    if (/^топ бананів$/i.test(text || '')) {
+      await sendItemTop(message.chat.id, 'itemASize', 'бананів', '🍌');
+      return;
+    }
+    if (/^топ вишень$/i.test(text || '')) {
+      await sendItemTop(message.chat.id, 'itemBSize', 'вишень', '🍒');
+      return;
+    }
+
     if (await processRpAction(message)) return;
 
-    if (!message.text) return;
-    if (/^баланс$/i.test(message.text.trim())) {
+    if (!text) return;
+    if (/^баланс$/i.test(text)) {
       await sendBalance(message.chat.id, message.from);
       return;
     }
-    if (/^топ$/i.test(message.text.trim())) {
+    if (/^топ$/i.test(text)) {
       await sendTop(message.chat.id);
       return;
     }
-    if (/^(зп|зарплата)$/i.test(message.text.trim())) {
+    if (/^(зп|зарплата)$/i.test(text)) {
       await sendSalary(message.chat.id, message.from);
       return;
     }
-    if (/^(магазин|донат)$/i.test(message.text.trim())) {
+    if (/^(магазин|донат)$/i.test(text)) {
       await sendDiamondsShop(message.chat.id, message.from);
       return;
     }
 
     if (!isGroup(message.chat)) return;
-    const match = message.text.trim().match(/^зіграти в (монетку|кубика)\s+(\d+)$/i);
+    const match = text.match(/^зіграти в (монетку|кубика)\s+(\d+)$/i);
     if (!match) return;
 
     const stake = Number(match[2]);
