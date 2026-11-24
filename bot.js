@@ -49,14 +49,13 @@ const supportRequests = new Map();
 const adminReplyState = new Map();
 const pendingBroadcasts = new Map();
 const BOT_COMMANDS = [
-  { command: 'start', description: 'Відкрити Таємний Клуб' },
-  { command: 'play', description: 'Запустити Mini App' },
-  { command: 'balance', description: 'Мій баланс (🪙 та 💎)' },
-  { command: 'zp', description: 'Отримати зарплату агента' },
-  { command: 'top', description: 'Рейтинг гравців' },
-  { command: 'shop', description: 'Магазин діамантів 💎' },
-  { command: 'help', description: 'Усі команди та правила' },
-  { command: 'support', description: 'Зв’язатися з адміном' },
+  { command: 'start', description: 'Головне меню Таємного Клубу' },
+  { command: 'play', description: 'Відкрити ігри (Дурак, Морський бій)' },
+  { command: 'balance', description: 'Переглянути баланс монет та діамантів' },
+  { command: 'zp', description: 'Отримати зарплату раз на 3 години' },
+  { command: 'top', description: 'Рейтинг найкращих гравців' },
+  { command: 'shop', description: 'Магазин діамантів та скінів' },
+  { command: 'support', description: 'Написати в підтримку адміністратору' },
 ];
 const INLINE_PREDICTIONS = [
   'Сьогодні карти натякнуть на перемогу — головне не сперечайся з тузом.',
