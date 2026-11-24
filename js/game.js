@@ -515,10 +515,31 @@
   }
 
   function bindInventory() {
+    const inventory = document.querySelector('.profile-inventory');
+    const toggle = document.getElementById('profile-inventory-toggle');
+    const content = document.getElementById('profile-inventory-content');
+    const chevron = inventory?.querySelector('.profile-inventory-chevron');
+    if (!inventory || !toggle || !content || !chevron) return;
+
+    function setExpanded(expanded) {
+      inventory.classList.toggle('is-expanded', expanded);
+      toggle.setAttribute('aria-expanded', String(expanded));
+      content.setAttribute('aria-hidden', String(!expanded));
+      content.inert = !expanded;
+      chevron.textContent = expanded ? '▴' : '▾';
+    }
+
+    toggle.addEventListener('click', () => {
+      setExpanded(toggle.getAttribute('aria-expanded') !== 'true');
+    });
     document.getElementById('profile-inventory-search')
       ?.addEventListener('input', renderInventory);
     document.getElementById('profile-inventory-filter')
       ?.addEventListener('change', renderInventory);
+
+    window.onViewShow = window.onViewShow || {};
+    window.onViewShow.profile = () => setExpanded(false);
+    setExpanded(false);
   }
 
   function normalizeUpgrades(value) {

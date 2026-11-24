@@ -63,8 +63,8 @@ body {
 .brand-text {
   flex-shrink: 0;
   overflow: visible;
-  font-size: clamp(11px, 3vw, 12px);
-  letter-spacing: 0.02em;
+  font-size: 10px;
+  letter-spacing: 0.01em;
   white-space: nowrap;
   text-overflow: clip;
 }
@@ -432,6 +432,12 @@ body.durak-game-active .views,
 @media (max-width: 380px) {
   .durak-mp-controls {
     grid-template-columns: minmax(68px, 0.8fr) minmax(0, 1.4fr) minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-inventory-content {
+    transition: none;
   }
 }
 
@@ -2137,7 +2143,7 @@ body.tictactoe-active #view-tictactoe.active {
   }
 
   .brand-text {
-    font-size: 11px;
+    font-size: 10px;
     letter-spacing: 0.01em;
     text-overflow: clip;
   }
@@ -2183,7 +2189,7 @@ body.tictactoe-active #view-tictactoe.active {
 
 .profile-inventory {
   display: grid;
-  gap: 14px;
+  gap: 0;
   margin: 16px 0;
   padding: 16px;
   border: 1px solid rgba(244, 63, 94, 0.26);
@@ -2203,23 +2209,68 @@ body.tictactoe-active #view-tictactoe.active {
   gap: 10px;
 }
 
-.profile-inventory-heading p {
-  margin: 0 0 4px;
+.profile-inventory-heading {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-inventory-heading:focus-visible {
+  outline: 2px solid #fb7185;
+  outline-offset: 4px;
+}
+
+.profile-inventory-heading-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.profile-inventory-eyebrow {
   color: #fb7185;
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.14em;
 }
 
-.profile-inventory-heading h3 {
-  margin: 0;
+.profile-inventory-title {
   font-size: 17px;
+  font-weight: 800;
 }
 
-.profile-inventory-heading > span {
+.profile-inventory-count {
   color: #a1a1aa;
   font-size: 11px;
   white-space: nowrap;
+}
+
+.profile-inventory-chevron {
+  flex: 0 0 auto;
+  color: #fb7185;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.profile-inventory-content {
+  display: grid;
+  max-height: 0;
+  gap: 14px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: max-height 320ms ease, opacity 180ms ease;
+}
+
+.profile-inventory.is-expanded .profile-inventory-content {
+  max-height: 1200px;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .profile-inventory-controls {

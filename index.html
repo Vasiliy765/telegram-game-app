@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#0f172a">
   <title>Таємний Клуб</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=38">
+  <link rel="stylesheet" href="style.css?v=40">
 </head>
 <body>
   <div id="app">
@@ -464,32 +464,35 @@
         </section>
         <button id="sa-profile-adm-btn" type="button" hidden style="width:100%;margin:16px 0;padding:16px;border:0;border-radius:14px;background:#dc2626;color:#fff;font-size:18px;font-weight:800;box-shadow:0 6px 20px rgba(220,38,38,.35);cursor:pointer">🛡️ Адмін-панель</button>
         <section class="profile-inventory" aria-labelledby="profile-inventory-title">
-          <header class="profile-inventory-heading">
-            <div>
-              <p>ВАША КОЛЕКЦІЯ</p>
-              <h3 id="profile-inventory-title">🎒 Інвентар</h3>
+          <button class="profile-inventory-heading" id="profile-inventory-toggle" type="button" aria-expanded="false" aria-controls="profile-inventory-content">
+            <span class="profile-inventory-heading-copy">
+              <span class="profile-inventory-eyebrow">ВАША КОЛЕКЦІЯ</span>
+              <span class="profile-inventory-title" id="profile-inventory-title">🎒 Інвентар</span>
+            </span>
+            <span class="profile-inventory-count" id="profile-inventory-count">Предметів: 0</span>
+            <span class="profile-inventory-chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="profile-inventory-content" id="profile-inventory-content" aria-hidden="true" inert>
+            <div class="profile-inventory-controls">
+              <label class="profile-inventory-search">
+                <span aria-hidden="true">⌕</span>
+                <input id="profile-inventory-search" type="search" placeholder="Пошук за назвою" aria-label="Пошук предметів у інвентарі">
+              </label>
+              <select id="profile-inventory-filter" aria-label="Фільтр типу предметів">
+                <option value="all">Усі предмети</option>
+                <option value="skins">Рубашки карт</option>
+                <option value="statuses">Статуси</option>
+              </select>
             </div>
-            <span id="profile-inventory-count">0 предметів</span>
-          </header>
-          <div class="profile-inventory-controls">
-            <label class="profile-inventory-search">
-              <span aria-hidden="true">⌕</span>
-              <input id="profile-inventory-search" type="search" placeholder="Пошук за назвою" aria-label="Пошук предметів у інвентарі">
-            </label>
-            <select id="profile-inventory-filter" aria-label="Фільтр типу предметів">
-              <option value="all">Усі предмети</option>
-              <option value="skins">Рубашки карт</option>
-              <option value="statuses">Статуси</option>
-            </select>
-          </div>
-          <div class="profile-inventory-grid" id="profile-inventory-items" aria-live="polite"></div>
-          <div class="profile-inventory-empty" id="profile-inventory-empty" hidden>
-            <span aria-hidden="true">📦</span>
-            <strong>Нічого не знайдено</strong>
-            <p id="profile-inventory-empty-message"></p>
-            <button class="profile-inventory-shop-button" id="profile-inventory-shop" type="button" data-view="store">
-              Перейти до «Монети»
-            </button>
+            <div class="profile-inventory-grid" id="profile-inventory-items" aria-live="polite"></div>
+            <div class="profile-inventory-empty" id="profile-inventory-empty" hidden>
+              <span aria-hidden="true">📦</span>
+              <strong>Нічого не знайдено</strong>
+              <p id="profile-inventory-empty-message"></p>
+              <button class="profile-inventory-shop-button" id="profile-inventory-shop" type="button" data-view="store">
+                Перейти до «Монети»
+              </button>
+            </div>
           </div>
         </section>
         <section class="agent-headquarters" aria-labelledby="agent-headquarters-title">
@@ -553,19 +556,19 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=39"></script>
-    <script src="js/firestore-room-store.js?v=39"></script>
-    <script src="js/twa.js?v=39"></script>
-    <script src="js/game.js?v=39"></script>
-    <script src="js/router.js?v=39"></script>
-    <script src="js/cards.js?v=39"></script>
-    <script src="js/durak.js?v=39"></script>
-    <script src="js/battleship.js?v=39"></script>
-    <script src="js/tictactoe.js?v=39"></script>
-    <script src="js/store.js?v=39"></script>
-    <script src="js/durak-room.js?v=39"></script>
-    <script src="js/durak-multiplayer.js?v=39"></script>
-    <script src="js/main.js?v=39"></script>
+    <script src="js/firebase-config.js?v=40"></script>
+    <script src="js/firestore-room-store.js?v=40"></script>
+    <script src="js/twa.js?v=40"></script>
+    <script src="js/game.js?v=40"></script>
+    <script src="js/router.js?v=40"></script>
+    <script src="js/cards.js?v=40"></script>
+    <script src="js/durak.js?v=40"></script>
+    <script src="js/battleship.js?v=40"></script>
+    <script src="js/tictactoe.js?v=40"></script>
+    <script src="js/store.js?v=40"></script>
+    <script src="js/durak-room.js?v=40"></script>
+    <script src="js/durak-multiplayer.js?v=40"></script>
+    <script src="js/main.js?v=40"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (window.hasIncomingRoomInvite?.('battleship')) {
@@ -577,7 +580,7 @@
   <div class="account-ban-screen" id="account-ban-screen" hidden role="alert" aria-live="assertive">
     <div class="account-ban-card">⛔ Ваш акаунт заблоковано адміністратором</div>
   </div>
-<script src="js/reactions-sync.js?v=39"></script>
-<script src="js/admin-panel.js?v=39"></script>
+<script src="js/reactions-sync.js?v=40"></script>
+<script src="js/admin-panel.js?v=40"></script>
 </body>
 </html>
