@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#0f172a">
   <title>Таємний Клуб</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=42">
+  <link rel="stylesheet" href="style.css?v=43">
 </head>
 <body>
   <div id="app">
@@ -462,6 +462,21 @@
             <p class="profile-vip-status" id="profile-vip-status" hidden></p>
           </div>
         </section>
+        <section class="referral-card" aria-labelledby="referral-title">
+          <div class="referral-card-heading">
+            <div class="referral-icon" aria-hidden="true">👥</div>
+            <div>
+              <h3 id="referral-title">Запросити друга</h3>
+              <p>Отримай за друга +150 🪙 та +2 💎</p>
+            </div>
+          </div>
+          <p class="referral-count" id="referral-count" aria-live="polite">Запрошено друзів: 0</p>
+          <div class="referral-actions">
+            <button class="referral-share-button" id="referral-share" type="button">📨 Надіслати запрошення в Telegram</button>
+            <button class="referral-copy-button" id="referral-copy" type="button">📋 Скопіювати посилання</button>
+          </div>
+          <p class="referral-status" id="referral-status" role="status" aria-live="polite"></p>
+        </section>
         <button id="sa-profile-adm-btn" type="button" hidden style="width:100%;margin:16px 0;padding:16px;border:0;border-radius:14px;background:#dc2626;color:#fff;font-size:18px;font-weight:800;box-shadow:0 6px 20px rgba(220,38,38,.35);cursor:pointer">🛡️ Адмін-панель</button>
         <section class="profile-inventory" aria-labelledby="profile-inventory-title">
           <button class="profile-inventory-heading" id="profile-inventory-toggle" type="button" aria-expanded="false" aria-controls="profile-inventory-content">
@@ -556,20 +571,20 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=42"></script>
-    <script src="js/firestore-room-store.js?v=42"></script>
-    <script src="js/twa.js?v=42"></script>
-    <script src="js/game.js?v=42"></script>
-    <script src="js/router.js?v=42"></script>
-    <script src="js/cards.js?v=42"></script>
-    <script src="js/durak.js?v=42"></script>
-    <script src="js/battleship.js?v=42"></script>
-    <script src="js/tictactoe.js?v=42"></script>
-    <script src="js/store.js?v=42"></script>
-    <script src="js/npc-system.js?v=42"></script>
-    <script src="js/durak-room.js?v=42"></script>
-    <script src="js/durak-multiplayer.js?v=42"></script>
-    <script src="js/main.js?v=42"></script>
+    <script src="js/firebase-config.js?v=43"></script>
+    <script src="js/firestore-room-store.js?v=43"></script>
+    <script src="js/twa.js?v=43"></script>
+    <script src="js/game.js?v=43"></script>
+    <script src="js/router.js?v=43"></script>
+    <script src="js/cards.js?v=43"></script>
+    <script src="js/durak.js?v=43"></script>
+    <script src="js/battleship.js?v=43"></script>
+    <script src="js/tictactoe.js?v=43"></script>
+    <script src="js/store.js?v=43"></script>
+    <script src="js/npc-system.js?v=43"></script>
+    <script src="js/durak-room.js?v=43"></script>
+    <script src="js/durak-multiplayer.js?v=43"></script>
+    <script src="js/main.js?v=43"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (window.hasIncomingRoomInvite?.('battleship')) {
@@ -581,7 +596,7 @@
   <div class="account-ban-screen" id="account-ban-screen" hidden role="alert" aria-live="assertive">
     <div class="account-ban-card">⛔ Ваш акаунт заблоковано адміністратором</div>
   </div>
-<script src="js/reactions-sync.js?v=42"></script>
-<script src="js/admin-panel.js?v=42"></script>
+<script src="js/reactions-sync.js?v=43"></script>
+<script src="js/admin-panel.js?v=43"></script>
 </body>
 </html>

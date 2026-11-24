@@ -69,6 +69,7 @@ const adminReplyState = new Map();
 const pendingBroadcasts = new Map();
 const BOT_COMMANDS = [
   { command: 'start', description: 'Головне меню Таємного Клубу' },
+  { command: 'ref', description: 'Запросити друга та отримати бонуси' },
   { command: 'play', description: 'Відкрити ігри (Дурак, Морський бій)' },
   { command: 'balance', description: 'Переглянути баланс монет та діамантів' },
   { command: 'zp', description: 'Отримати зарплату раз на 3 години' },
@@ -462,18 +463,121 @@ async function processRpAction(message) {
   return true;
 }
 
-async function sendStart(chatId, chatType, user) {
+async function sendStart(chatId, chatType, user, startPayload = '') {
   await ensureUser(user);
+  const referralMatch = typeof startPayload === 'string'
+    ? startPayload.match(/^ref_(\d{1,20})$/)
+    : null;
+  const referralApplied = referralMatch
+    ? await applyReferral(user, referralMatch[1])
+    : false;
+  const botUsername = await getBotUsername();
+  const referralLink = `https://t.me/${botUsername}?start=ref_${telegramId(user)}`;
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}`
+    + `&text=${encodeURIComponent('Приєднуйся до Таємного Клубу та отримай стартовий бонус!')}`;
   const keyboard = chatType === 'private'
     ? { text: '🎮 Відкрити гру', web_app: { url: WEBAPP_URL } }
     : { text: '🎮 Відкрити гру', url: WEBAPP_URL };
 
+  const inviteButton = { text: '👥 Запросити друга', url: shareUrl };
   await sendMessage(
     chatId,
-    `Привіт, ${escapeHtml(displayName(user))}! Ласкаво просимо до Таємного Клубу — твій профіль створено. Заходь грати!`,
+    `Привіт, ${escapeHtml(displayName(user))}! Ласкаво просимо до Таємного Клубу — твій профіль створено. Заходь грати!`
+      + (referralApplied ? '\n🎁 За запрошенням нараховано +100 🪙!' : ''),
     {
       parse_mode: 'HTML',
-      reply_markup: { inline_keyboard: [[keyboard]] },
+      reply_markup: { inline_keyboard: [[keyboard], [inviteButton]] },
+    },
+  );
+}
+
+let cachedBotUsername = '';
+
+async function getBotUsername() {
+  if (!cachedBotUsername) {
+    const botInfo = await bot.api.getMe();
+    if (!botInfo.username) throw new Error('Telegram bot username is unavailable.');
+    cachedBotUsername = botInfo.username;
+  }
+  return cachedBotUsername;
+}
+
+async function applyReferral(newUser, referrerId) {
+  const newUserId = telegramId(newUser);
+  if (!/^\d{1,20}$/.test(referrerId) || referrerId === newUserId) return false;
+  const newUserRef = users.doc(newUserId);
+  const referrerRef = users.doc(referrerId);
+  const wasApplied = await db.runTransaction(async (transaction) => {
+    const [newUserSnapshot, referrerSnapshot] = await Promise.all([
+      transaction.get(newUserRef),
+      transaction.get(referrerRef),
+    ]);
+    if (!newUserSnapshot.exists || !referrerSnapshot.exists ||
+        referrerSnapshot.get('isNpc') === true || newUserSnapshot.get('referredBy')) {
+      return false;
+    }
+
+    const readBalance = (snapshot, field) => {
+      const value = Number(snapshot.get(field) ?? 0);
+      if (!Number.isSafeInteger(value) || value < 0) {
+        throw new Error(`Invalid ${field} balance while applying a referral.`);
+      }
+      return value;
+    };
+    const newBalance = readBalance(newUserSnapshot, 'balance');
+    const referrerBalance = readBalance(referrerSnapshot, 'balance');
+    const referrerDiamonds = readBalance(referrerSnapshot, 'diamonds');
+    const referralsCount = readBalance(referrerSnapshot, 'referralsCount');
+    if (newBalance > Number.MAX_SAFE_INTEGER - 100 ||
+        referrerBalance > Number.MAX_SAFE_INTEGER - 150 ||
+        referrerDiamonds > Number.MAX_SAFE_INTEGER - 2 ||
+        referralsCount === Number.MAX_SAFE_INTEGER) {
+      throw new Error('Referral reward would exceed the supported balance range.');
+    }
+
+    transaction.update(newUserRef, {
+      referredBy: referrerId,
+      balance: newBalance + 100,
+    });
+    transaction.update(referrerRef, {
+      balance: referrerBalance + 150,
+      diamonds: referrerDiamonds + 2,
+      referralsCount: referralsCount + 1,
+    });
+    return true;
+  });
+
+  if (wasApplied) {
+    try {
+      await sendMessage(
+        referrerId,
+        `🎉 <b>Новий агент у Таємний Клуб!</b>\n`
+          + `За твоїм запрошенням приєднався <b>${escapeHtml(displayName(newUser))}</b>.\n`
+          + 'Твоя нагорода: <b>+150 🪙</b> та <b>+2 💎</b>!',
+        { parse_mode: 'HTML' },
+      );
+    } catch (error) {
+      console.error(`Referral reward was applied but notification to ${referrerId} failed:`, error);
+    }
+  }
+  return wasApplied;
+}
+
+async function sendReferral(chatId, user) {
+  const userRef = await ensureUser(user);
+  const [snapshot, botUsername] = await Promise.all([userRef.get(), getBotUsername()]);
+  const referralLink = `https://t.me/${botUsername}?start=ref_${telegramId(user)}`;
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}`
+    + `&text=${encodeURIComponent('Приєднуйся до Таємного Клубу та отримай стартовий бонус!')}`;
+  await sendMessage(
+    chatId,
+    `👥 <b>Запроси друга до Таємного Клубу!</b>\n`
+      + `Твоє посилання:\n${referralLink}\n`
+      + `Запрошено друзів: <b>${formatCoins(snapshot.get('referralsCount') || 0)}</b>\n`
+      + 'За кожного друга: +150 🪙 та +2 💎, друг отримує +100 🪙.',
+    {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: [[{ text: '📨 Поділитися запрошенням', url: shareUrl }]] },
     },
   );
 }
@@ -561,7 +665,7 @@ async function sendHelp(chatId) {
     chatId,
     '<b>🎯 Команди Таємного Клубу</b>\n'
       + '/start — відкрити бота\n/play — запустити Mini App\n/balance — баланс 🪙 та 💎\n'
-      + '/zp — зарплата агента раз на 3 години\n/top — рейтинг гравців\n/shop — магазин діамантів\n'
+      + '/zp — зарплата агента раз на 3 години\n/top — рейтинг гравців\n/ref — запросити друга\n/shop — магазин діамантів\n'
       + '/support — написати адміністратору\n'
       + 'Фруктові мініігри: «дік» / «дик» — банан, «сісі» / «сиси» — груди (кулдаун 2 години).\n'
       + '«топ діків» / «топ грудей» — рейтинг фруктів.\n'
@@ -1823,7 +1927,10 @@ onUpdate('message', async (context) => {
     if (command) {
       switch (command[1].toLowerCase()) {
         case 'start':
-          await sendStart(message.chat.id, message.chat.type, message.from);
+          await sendStart(message.chat.id, message.chat.type, message.from, command[2] || '');
+          return;
+        case 'ref':
+          await sendReferral(message.chat.id, message.from);
           return;
         case 'play':
           await sendPlay(message.chat.id, message.chat.type);

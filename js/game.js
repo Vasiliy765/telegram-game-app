@@ -5,6 +5,7 @@
 
   const BALANCE_KEY = 'tga_balance';
   const DIAMONDS_API_URL = 'https://telegram-game-app.onrender.com';
+  const REFERRAL_BOT_USERNAME = 'SecretAgentGame646Bot';
   const DEFAULT_CARD_SKIN = 'classic-red';
   const DEFAULT_SHOP_PRICING = Object.freeze({
     stars10: 20,
@@ -62,6 +63,7 @@
   window.APP_STATE = window.APP_STATE || {};
   window.APP_STATE.balance = readBalance();
   window.APP_STATE.diamonds = 0;
+  window.APP_STATE.referralsCount = 0;
   window.APP_STATE.ownedSkins = [DEFAULT_CARD_SKIN];
   window.APP_STATE.activeSkin = DEFAULT_CARD_SKIN;
   window.APP_STATE.vipUntil = 0;
@@ -463,7 +465,85 @@
     window.renderPlayerAvatar(document.getElementById('header-avatar'), profile);
     const headerVip = document.getElementById('header-vip-badge');
     if (headerVip) headerVip.hidden = !profile.isVip;
+    renderReferralProgram(window.APP_STATE.referralsCount);
     renderInventory();
+  }
+
+  function getReferralLink() {
+    const userId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    if (userId == null || !/^\d{1,20}$/.test(String(userId))) return '';
+    return `https://t.me/${REFERRAL_BOT_USERNAME}?start=ref_${userId}`;
+  }
+
+  function renderReferralProgram(referralsCount) {
+    const count = document.getElementById('referral-count');
+    const link = getReferralLink();
+    const shareButton = document.getElementById('referral-share');
+    const copyButton = document.getElementById('referral-copy');
+    if (count) {
+      const safeCount = Number.isSafeInteger(Number(referralsCount))
+        ? Math.max(0, Number(referralsCount))
+        : 0;
+      count.textContent = `Запрошено друзів: ${safeCount}`;
+    }
+    if (shareButton) shareButton.disabled = !link;
+    if (copyButton) copyButton.disabled = !link;
+  }
+
+  async function copyReferralLink(link) {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(link);
+        return;
+      } catch (error) {
+        console.warn('Clipboard API failed; trying the compatibility fallback.', error);
+      }
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = link;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    let copied;
+    try {
+      copied = document.execCommand('copy');
+    } finally {
+      textarea.remove();
+    }
+    if (!copied) throw new Error('Clipboard copy was not available.');
+  }
+
+  function bindReferralProgram() {
+    const shareButton = document.getElementById('referral-share');
+    const copyButton = document.getElementById('referral-copy');
+    const status = document.getElementById('referral-status');
+    shareButton?.addEventListener('click', () => {
+      const link = getReferralLink();
+      if (!link) return;
+      const inviteText = 'Приєднуйся до Таємного Клубу та отримай стартовий бонус!';
+      const shareUrl = 'https://t.me/share/url?url=' + encodeURIComponent(link)
+        + '&text=' + encodeURIComponent(inviteText);
+      if (window.Telegram?.WebApp?.openTelegramLink) {
+        window.Telegram.WebApp.openTelegramLink(shareUrl);
+      } else {
+        window.open(shareUrl, '_blank', 'noopener,noreferrer');
+      }
+    });
+    copyButton?.addEventListener('click', async () => {
+      const link = getReferralLink();
+      if (!link) return;
+      try {
+        await copyReferralLink(link);
+        if (status) status.textContent = 'Посилання скопійовано!';
+        window.TWA?.toast?.('Посилання скопійовано!');
+      } catch (error) {
+        console.error('Could not copy the referral link.', error);
+        if (status) status.textContent = 'Не вдалося скопіювати посилання.';
+        window.TWA?.toast?.('Не вдалося скопіювати посилання');
+      }
+    });
   }
 
   function renderInventory() {
@@ -1188,6 +1268,10 @@
   }
 
   function applyRemoteShopProfile(profile) {
+    const referralsCount = Number(profile.referralsCount);
+    window.APP_STATE.referralsCount = Number.isSafeInteger(referralsCount) && referralsCount >= 0
+      ? referralsCount
+      : 0;
     const knownSkins = window.CARDS?.CARD_SKIN_KEYS || [DEFAULT_CARD_SKIN];
     const savedSkins = Array.isArray(profile.ownedSkins)
       ? profile.ownedSkins.filter((skin) => knownSkins.includes(skin))
@@ -1471,6 +1555,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     renderBalance();
     renderTelegramProfile();
+    bindReferralProgram();
     bindInventory();
     renderAgentUpgrades();
     bindAgentUpgrades();
