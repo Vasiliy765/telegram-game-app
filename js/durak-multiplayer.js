@@ -1,9 +1,11 @@
 window.DurakMultiplayer = (() => {
   const C = CARDS;
   const BOT_TURN_DELAY = 1200;
+  const TAKE_RESOLUTION_DELAY = 4500;
   const $ = (id) => document.getElementById(id);
   let game = null;
   let botTimer = null;
+  let takeTimer = null;
   let timerVersion = 0;
   let audioContext = null;
   let audioUnlocked = false;
@@ -111,6 +113,10 @@ window.DurakMultiplayer = (() => {
     return Number(player.vipUntil || 0) > Date.now() ? `👑 ${name}` : name;
   }
 
+  function samePlayerId(left, right) {
+    return left != null && right != null && String(left) === String(right);
+  }
+
   function appendPlayerName(element, player) {
     const isVip = Number(player.vipUntil || 0) > Date.now();
     element.append(document.createTextNode(`${isVip ? '👑 ' : ''}${player.name || 'Гравець'}`));
@@ -193,16 +199,18 @@ window.DurakMultiplayer = (() => {
   }
 
   function canPlayerPlay(card, index = game.localPlayerIndex) {
-    if (game.gameOver || game.players[index].isOut || game.passedPlayers[index]) return false;
+    const player = game.players[index];
+    if (game.gameOver || !player || player.isOut) return false;
     if (game.tablePairs.length === 0) return index === game.attackerIndex;
-    if (index === game.defenderIndex) {
+    const defender = game.players[game.defenderIndex];
+    if (samePlayerId(player.id, defender.id)) {
       if (game.isTaking) return false;
       if (transferDefenderIndex(index, card) !== -1) return true;
       const pair = openPair();
       return Boolean(pair && C.beat(pair.attack, card, game.trump.suit));
     }
-    return game.tablePairs.length < Math.min(6, game.maxAttacks) &&
-      unbeatenAttackCount() < game.players[game.defenderIndex].hand.length &&
+    return game.tablePairs.length < 6 &&
+      unbeatenAttackCount() < defender.hand.length &&
       ranksOnTable().has(card.rank);
   }
 
@@ -248,7 +256,7 @@ window.DurakMultiplayer = (() => {
         isOut: player.isOut,
         status: player.status,
         cardCount: player.hand.length,
-        hand: player.id === game.localPlayerId
+        hand: samePlayerId(player.id, game.localPlayerId)
           ? player.hand.map((card) => ({ ...card }))
           : null,
       })),
@@ -265,6 +273,7 @@ window.DurakMultiplayer = (() => {
       attackerIndex: game.attackerIndex,
       defenderIndex: game.defenderIndex,
       passedPlayers: { ...game.passedPlayers },
+      takeDeadline: game.takeDeadline,
       isTaking: game.isTaking,
       localPlayerIndex: game.localPlayerIndex,
       maxAttacks: game.maxAttacks,
@@ -323,6 +332,8 @@ window.DurakMultiplayer = (() => {
     if (snapshotData.matchId && window.beginUserWager &&
         !window.beginUserWager(snapshotData.matchId, stake)) return false;
     if (botTimer) clearTimeout(botTimer);
+    if (takeTimer) clearTimeout(takeTimer);
+    takeTimer = null;
     timerVersion += 1;
     const previousGame = game;
     const wasGameOver = Boolean(game?.gameOver);
@@ -344,9 +355,9 @@ window.DurakMultiplayer = (() => {
       isOut: Boolean(player.isOut),
       status: player.status || '',
       cardCount: Number(player.cardCount) || 0,
-      hand: player.id === localPlayerId ? hand.map((card) => ({ ...card })) : [],
+      hand: samePlayerId(player.id, localPlayerId) ? hand.map((card) => ({ ...card })) : [],
     }));
-    const localPlayerIndex = players.findIndex((player) => player.id === localPlayerId);
+    const localPlayerIndex = players.findIndex((player) => samePlayerId(player.id, localPlayerId));
     if (localPlayerIndex === -1) return false;
     const trump = snapshotData.trump || snapshotData.trumpCard;
     game = {
@@ -366,6 +377,7 @@ window.DurakMultiplayer = (() => {
       localPlayerId,
       localPlayerIndex,
       isTaking: Boolean(snapshotData.isTaking),
+      takeDeadline: Number(snapshotData.takeDeadline) || 0,
       isMovePending: Boolean(previousGame?.isMovePending),
       isHost: false,
       onAction,
@@ -379,7 +391,7 @@ window.DurakMultiplayer = (() => {
     if (previousGame && previousGame.roundNumber !== game.roundNumber &&
         !previousGame.isTaking && !game.isTaking) playSweepSound();
     if (!previousGame || (wasGameOver && !game.gameOver)) playShuffleSound();
-    if (game.gameOver && !wasGameOver) playEndSound(game.loserId !== localPlayerId);
+    if (game.gameOver && !wasGameOver) playEndSound(!samePlayerId(game.loserId, localPlayerId));
     updateStatuses();
     render();
     return true;
@@ -472,14 +484,16 @@ window.DurakMultiplayer = (() => {
     if (!game.gameOver) return;
 
     const localPlayer = game.players[game.localPlayerIndex];
-    const loser = game.players.find((player) => player.id === game.loserId);
-    const winners = loser ? game.players.filter((player) => player.id !== loser.id) : [];
+    const loser = game.players.find((player) => samePlayerId(player.id, game.loserId));
+    const winners = loser
+      ? game.players.filter((player) => !samePlayerId(player.id, loser.id))
+      : [];
     const pot = game.stake * game.players.length;
     const baseShare = winners.length ? Math.floor(pot / winners.length) : 0;
     const remainder = winners.length ? pot % winners.length : 0;
-    const localWinnerIndex = winners.findIndex((player) => player.id === localPlayer.id);
+    const localWinnerIndex = winners.findIndex((player) => samePlayerId(player.id, localPlayer.id));
     const localChange = loser
-      ? localPlayer.id === loser.id
+      ? samePlayerId(localPlayer.id, loser.id)
         ? -game.stake
         : baseShare + (localWinnerIndex < remainder ? 1 : 0)
       : game.stake;
@@ -487,7 +501,9 @@ window.DurakMultiplayer = (() => {
       window.settleUserWager(game.matchId, Math.max(0, localChange), { online: game.isOnline });
     }
 
-    title.textContent = !loser ? 'Нічия' : localPlayer.id === loser.id ? 'Поразка' : 'Перемога';
+    title.textContent = !loser
+      ? 'Нічия'
+      : samePlayerId(localPlayer.id, loser.id) ? 'Поразка' : 'Перемога';
     change.textContent = `${localChange > 0 ? '+' : ''}${localChange} 🪙`;
     change.classList.toggle('loss', localChange < 0);
     change.classList.toggle('win', localChange > 0);
@@ -495,11 +511,12 @@ window.DurakMultiplayer = (() => {
 
     const addPlayerRow = (player, winnings) => {
       const row = document.createElement('div');
-      row.className = `durak-result-player${player.id === loser?.id ? ' loser' : ' winner'}`;
+      const isLoser = samePlayerId(player.id, loser?.id);
+      row.className = `durak-result-player${isLoser ? ' loser' : ' winner'}`;
 
       const identity = document.createElement('div');
       identity.className = 'durak-result-identity';
-      if (player.id === loser?.id) {
+      if (isLoser) {
         const place = document.createElement('span');
         place.className = 'durak-result-place';
         place.textContent = String(game.players.length);
@@ -525,13 +542,13 @@ window.DurakMultiplayer = (() => {
       appendPlayerName(name, player);
       const description = document.createElement('span');
       description.className = 'durak-result-description';
-      description.textContent = player.id === loser?.id ? 'дурень' : 'переможець';
+      description.textContent = isLoser ? 'дурень' : 'переможець';
       details.append(name, description);
       identity.append(avatar, details);
 
       const amount = document.createElement('span');
       amount.className = 'durak-result-amount';
-      amount.textContent = player.id === loser?.id
+      amount.textContent = isLoser
         ? `-${game.stake} 🪙`
         : `+${winnings} 🪙`;
       row.append(identity, amount);
@@ -582,6 +599,22 @@ window.DurakMultiplayer = (() => {
     }, BOT_TURN_DELAY);
   }
 
+  function scheduleTakeResolution() {
+    if (takeTimer) clearTimeout(takeTimer);
+    takeTimer = null;
+    if (!game?.isTaking || !game.isHost) return;
+
+    const deadline = Number(game.takeDeadline) || Date.now() + TAKE_RESOLUTION_DELAY;
+    game.takeDeadline = deadline;
+    const takingGame = game;
+    takeTimer = setTimeout(() => {
+      takeTimer = null;
+      if (game === takingGame && game.isTaking && game.takeDeadline === deadline) {
+        finishRound(true);
+      }
+    }, Math.max(0, deadline - Date.now()));
+  }
+
   function lowestCard(hand) {
     return hand.reduce((best, card) =>
       !best || C.RANK_VAL[card.rank] < C.RANK_VAL[best.rank] ? card : best,
@@ -607,13 +640,15 @@ window.DurakMultiplayer = (() => {
     game.gameOver = true;
     game.loserId = active.length === 1 ? game.players[active[0]].id : null;
     setMessage(game.loserId
-      ? `${game.players.find((player) => player.id === game.loserId).name} залишився з картами.`
+      ? `${game.players.find((player) => samePlayerId(player.id, game.loserId)).name} залишився з картами.`
       : 'Нічия!');
     return true;
   }
 
   function finishRound(taken) {
     if (botTimer) clearTimeout(botTimer);
+    if (takeTimer) clearTimeout(takeTimer);
+    takeTimer = null;
     timerVersion += 1;
     const attackerBefore = game.attackerIndex;
     const defenderBefore = game.defenderIndex;
@@ -630,6 +665,7 @@ window.DurakMultiplayer = (() => {
     game.tablePairs = [];
     resetPasses();
     game.isTaking = false;
+    game.takeDeadline = 0;
 
     const refillOrder = [];
     for (let offset = 0; offset < game.players.length; offset++) {
@@ -663,7 +699,7 @@ window.DurakMultiplayer = (() => {
 
     game.roundNumber += 1;
     if (markGameOver()) {
-      playEndSound(game.loserId !== game.localPlayerId);
+      playEndSound(!samePlayerId(game.loserId, game.localPlayerId));
       publish();
       return;
     }
@@ -1005,7 +1041,7 @@ window.DurakMultiplayer = (() => {
     } else if (!playerIsDefender && game.tablePairs.length > 0 && !localPlayer.isOut) {
       const vote = document.createElement('button');
       vote.className = 'btn vote';
-      vote.textContent = allBeaten() && !game.isTaking ? 'Бито' : 'Пас';
+      vote.textContent = game.isTaking ? 'Готово' : allBeaten() ? 'Бито' : 'Пас';
       vote.disabled = game.isMovePending || Boolean(game.passedPlayers[game.localPlayerIndex]);
       vote.addEventListener('click', () => passRound());
       actionsEl.appendChild(vote);
@@ -1086,21 +1122,23 @@ window.DurakMultiplayer = (() => {
       return true;
     }
     game.isTaking = true;
+    game.takeDeadline = Date.now() + TAKE_RESOLUTION_DELAY;
     resetPasses();
     setMessage(`${game.players[playerIndex].name} бере карти.`);
     playSweepSound();
     publish();
+    scheduleTakeResolution();
     scheduleBotStep();
     return true;
   }
 
   async function dispatchAction({ playerId, type, cardId } = {}) {
     if (!game) return false;
-    const playerIndex = game.players.findIndex((player) => player.id === playerId);
+    const playerIndex = game.players.findIndex((player) => samePlayerId(player.id, playerId));
     if (playerIndex === -1 || game.players[playerIndex].isBot) return false;
 
     if (type === 'rematch') {
-      if (playerId !== game.hostId || typeof game.onRematch !== 'function') return false;
+      if (!samePlayerId(playerId, game.hostId) || typeof game.onRematch !== 'function') return false;
       await game.onRematch();
       return true;
     }
@@ -1160,7 +1198,7 @@ window.DurakMultiplayer = (() => {
       throw new Error('Для гри потрібні від 2 до 6 гравців.');
     }
     if (players.some((player) => !player.id) ||
-        new Set(players.map((player) => player.id)).size !== players.length) {
+        new Set(players.map((player) => String(player.id))).size !== players.length) {
       throw new Error('У кожного гравця має бути унікальний ідентифікатор.');
     }
     if (deckSize !== 36 && deckSize !== 52) {
@@ -1170,13 +1208,15 @@ window.DurakMultiplayer = (() => {
       throw new Error('Ставка має бути невід’ємним цілим числом.');
     }
 
-    const localPlayerIndex = players.findIndex((player) => player.id === localPlayerId);
+    const localPlayerIndex = players.findIndex((player) => samePlayerId(player.id, localPlayerId));
     if (localPlayerIndex === -1) throw new Error('Локального гравця немає за столом.');
     const wagerId = matchId || `durak-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     if (window.beginUserWager && !window.beginUserWager(wagerId, Number(stake))) {
       throw new Error('Недостатньо монет для ставки.');
     }
     if (botTimer) clearTimeout(botTimer);
+    if (takeTimer) clearTimeout(takeTimer);
+    takeTimer = null;
     timerVersion += 1;
 
     const deck = C.newDeck(deckSize);
@@ -1184,7 +1224,7 @@ window.DurakMultiplayer = (() => {
     const handSize = Math.min(6, Math.floor((deck.length - 1) / players.length));
     const gamePlayers = players.map((player) => ({
       id: player.id,
-      name: player.name || (player.id === localPlayerId ? 'Гравець' : 'Бот'),
+      name: player.name || (samePlayerId(player.id, localPlayerId) ? 'Гравець' : 'Бот'),
       telegramId: player.telegramId || '',
       username: player.username || '',
       photoUrl: player.photoUrl || '',
@@ -1206,6 +1246,7 @@ window.DurakMultiplayer = (() => {
       defenderIndex: 1,
       passedPlayers: {},
       isTaking: false,
+      takeDeadline: 0,
       localPlayerId,
       localPlayerIndex,
       maxAttacks: 0,
@@ -1261,8 +1302,11 @@ window.DurakMultiplayer = (() => {
     if (savedState.matchId && window.beginUserWager &&
         !window.beginUserWager(savedState.matchId, stake)) return false;
     if (botTimer) clearTimeout(botTimer);
+    if (takeTimer) clearTimeout(takeTimer);
+    takeTimer = null;
     timerVersion += 1;
-    const localPlayerIndex = savedState.players.findIndex((player) => player.id === localPlayerId);
+    const localPlayerIndex = savedState.players.findIndex((player) =>
+      samePlayerId(player.id, localPlayerId));
     if (localPlayerIndex === -1) return false;
     game = {
       ...savedState,
@@ -1281,6 +1325,7 @@ window.DurakMultiplayer = (() => {
         defend: pair.defend ? { ...pair.defend } : null,
       })),
       passedPlayers: { ...(savedState.passedPlayers || {}) },
+      takeDeadline: Number(savedState.takeDeadline) || 0,
       localPlayerId,
       localPlayerIndex,
       isHost: true,
@@ -1288,7 +1333,11 @@ window.DurakMultiplayer = (() => {
       onAction: null,
       ...options,
     };
+    if (game.isTaking && !game.takeDeadline) {
+      game.takeDeadline = Date.now() + TAKE_RESOLUTION_DELAY;
+    }
     publish();
+    scheduleTakeResolution();
     scheduleBotStep();
     return true;
   }

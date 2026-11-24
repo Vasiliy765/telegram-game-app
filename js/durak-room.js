@@ -49,6 +49,10 @@ window.DurakRoom = (() => {
     else console.info(message);
   }
 
+  function sameId(left, right) {
+    return left != null && right != null && String(left) === String(right);
+  }
+
   function firebaseConfigIsReady() {
     const config = window.FIREBASE_CONFIG;
     const required = ['apiKey', 'authDomain', 'projectId', 'appId'];
@@ -355,7 +359,8 @@ window.DurakRoom = (() => {
     if (state.isOnline && state.joinPending) {
       const profile = window.getCurrentPlayerProfile?.() || {};
       const ownSeat = slots.find((slot) => slot.joined && (
-        slot.id === state.myId || (profile.telegramId && slot.telegramId === profile.telegramId)
+        sameId(slot.id, state.myId) ||
+        (profile.telegramId && sameId(slot.telegramId, profile.telegramId))
       ));
       if (ownSeat) {
         state.myId = ownSeat.id;
@@ -386,7 +391,7 @@ window.DurakRoom = (() => {
       players: state.slots
         .filter((slot) => slot.joined)
         .map((slot) => {
-          const ownProfile = slot.id === state.myId ? currentProfile : {};
+          const ownProfile = sameId(slot.id, state.myId) ? currentProfile : {};
           return {
             id: slot.id,
             name: slot.name,
@@ -625,7 +630,8 @@ window.DurakRoom = (() => {
 
   function applyRemoteGame() {
     if (!state.pendingPublicGame || !Array.isArray(state.pendingHand)) return;
-    const localPlayer = state.pendingPublicGame.players.find((player) => player.id === state.myId);
+    const localPlayer = state.pendingPublicGame.players.find((player) =>
+      sameId(player.id, state.myId));
     if (!localPlayer || state.pendingHand.length !== Number(localPlayer.cardCount)) return;
     const loaded = window.DurakMultiplayer.loadSnapshot(
       state.pendingPublicGame,
@@ -852,8 +858,8 @@ window.DurakRoom = (() => {
       const seatsSnapshot = await roomReference('seats').once('value');
       const currentSeats = seatsSnapshot.val() || {};
       const profile = window.getCurrentPlayerProfile?.() || {};
-      let seat = Object.values(currentSeats).find((item) => item?.id === state.myId ||
-        (profile.telegramId && item?.telegramId === profile.telegramId));
+      let seat = Object.values(currentSeats).find((item) => sameId(item?.id, state.myId) ||
+        (profile.telegramId && sameId(item?.telegramId, profile.telegramId)));
       if (seat) state.myId = seat.id;
       state.joinPending = !seat;
       if (!seat) {
@@ -909,8 +915,8 @@ window.DurakRoom = (() => {
             return { error: 'Гра вже почалася — приєднатися більше не можна.' };
           }
           room.seats ||= {};
-          const existingSeat = Object.values(room.seats).find((seat) => seat?.id === state.myId ||
-            (profile.telegramId && seat?.telegramId === profile.telegramId));
+          const existingSeat = Object.values(room.seats).find((seat) => sameId(seat?.id, state.myId) ||
+            (profile.telegramId && sameId(seat?.telegramId, profile.telegramId)));
           if (existingSeat) return { alreadyJoined: true };
           for (let position = 1; position < state.settings.players; position += 1) {
             if (room.seats[position]) continue;
@@ -925,8 +931,9 @@ window.DurakRoom = (() => {
           return { error: 'У кімнаті немає вільних місць.' };
         },
       );
-      const joinedSeat = Object.values(result.room?.seats || {}).find((seat) => seat?.id === state.myId ||
-        (profile.telegramId && seat?.telegramId === profile.telegramId));
+      const joinedSeat = Object.values(result.room?.seats || {}).find((seat) =>
+        sameId(seat?.id, state.myId) ||
+        (profile.telegramId && sameId(seat?.telegramId, profile.telegramId)));
       if (!joinedSeat) throw new Error('Не вдалося знайти ваше місце за столом.');
       state.myId = joinedSeat.id;
       state.joinPending = false;
@@ -979,7 +986,7 @@ window.DurakRoom = (() => {
   }
 
   async function toggleReady() {
-    const ownSlot = state.slots.find((slot) => slot.id === state.myId);
+    const ownSlot = state.slots.find((slot) => sameId(slot.id, state.myId));
     if (!ownSlot || ownSlot.isBot) return;
     const updated = { ...ownSlot, isReady: !ownSlot.isReady };
     if (state.isOnline) {
@@ -1008,7 +1015,7 @@ window.DurakRoom = (() => {
           const position = ownPosition();
           if (Number.isInteger(position)) {
             const removeSeat = (room) => {
-              if (room?.seats?.[position]?.id !== state.myId) return;
+              if (!sameId(room?.seats?.[position]?.id, state.myId)) return;
               delete room.seats[position];
               delete room.meta?.members?.[state.myId];
               room.meta.bank = Math.round(
@@ -1037,13 +1044,13 @@ window.DurakRoom = (() => {
   }
 
   function ownPosition() {
-    return state.slots.find((slot) => slot.id === state.myId)?.position;
+    return state.slots.find((slot) => sameId(slot.id, state.myId))?.position;
   }
 
   window.addEventListener('usershopprofilechange', (event) => {
     if (!state.isOnline || !state.roomCode) return;
     const position = ownPosition();
-    const ownSlot = state.slots.find((slot) => slot.id === state.myId);
+    const ownSlot = state.slots.find((slot) => sameId(slot.id, state.myId));
     if (!Number.isInteger(position) || !ownSlot) return;
     const { activeSkin, vipUntil } = event.detail;
     if (ownSlot.activeSkin === activeSkin && Number(ownSlot.vipUntil) === Number(vipUntil)) return;
@@ -1055,7 +1062,7 @@ window.DurakRoom = (() => {
     window.addEventListener('userupgradeschange', (event) => {
       if (!state.isOnline || !state.roomCode) return;
       const position = ownPosition();
-      const ownSlot = state.slots.find((slot) => slot.id === state.myId);
+      const ownSlot = state.slots.find((slot) => sameId(slot.id, state.myId));
       if (!Number.isInteger(position) || !ownSlot) return;
       const agentRank = Number(event.detail?.upgrades?.rank) || 0;
       if (Number(ownSlot.agentRank) === agentRank) return;
