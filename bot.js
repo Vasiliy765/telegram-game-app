@@ -2023,7 +2023,7 @@ async function startBot() {
 
   const polling = run(bot, {
     exitOnError: true,
-    allowedUpdates: ['message', 'callback_query', 'pre_checkout_query', 'my_chat_member'],
+    allowedUpdates: ['message', 'callback_query', 'inline_query', 'pre_checkout_query', 'my_chat_member'],
   });
   console.log('Бот успішно запущений!');
   await polling;
